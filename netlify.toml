@@ -1,5 +1,8 @@
 [build]
   publish = "public"
+  # Stamp the commit hash into index.html's asset URLs so a new deploy is
+  # picked up on the next normal visit, with no hard reload needed.
+  command = "node scripts/stamp.js"
 
 # Netlify proxies these paths server-side, which sidesteps the missing CORS
 # headers on BC Hydro's feed. The browser only ever talks to this site.
@@ -19,3 +22,25 @@
   for = "/api/*"
   [headers.values]
     Cache-Control = "public, max-age=120"
+
+# index.html is always revalidated, so every visit sees the newest asset
+# URLs. The versioned assets themselves can be cached for a long time.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

@@ -52,7 +52,10 @@ The app requests `/api/planned` on its own origin and relies on a server-side pr
 
 ## Deploying on Netlify
 
-`netlify.toml` already contains everything: it publishes `public/` and proxies
+`netlify.toml` already contains everything: it runs `node scripts/stamp.js` as the
+build command (which rewrites the asset URLs in `index.html` to `app.js?v=<commit>`
+and sets long-lived cache headers, so each deploy is picked up on the next visit
+without a hard reload), publishes `public/` and proxies
 `/api/planned` and `/api/current` to BC Hydro with a 200 rewrite. Connect the repo to
 Netlify, or run `netlify deploy --prod` from this directory. No functions are needed.
 

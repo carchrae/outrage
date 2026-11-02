@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js",
-    "check-live": "node scripts/check-live.js"
+    "check-live": "node scripts/check-live.js",
+    "build": "node scripts/stamp.js"
   },
   "license": "ISC"
 }
