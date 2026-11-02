@@ -128,6 +128,8 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .btn.small { padding: 5px 10px; font-size: 0.9rem; }
 .home-card { background: var(--surface); border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 0; }
 .home-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
+.home-card .home-title { font-weight: 500; color: var(--muted); }
+.home-card .home-title .addr { color: var(--text); }
 .home-card .addr { font-size: 1.15rem; font-weight: 650; }
 .home-card .addr .muni { color: var(--muted); font-weight: 400; }
 .home-form { display: grid; gap: 8px; }

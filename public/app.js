@@ -431,8 +431,7 @@
     }
 
     setHTML(els.home, `<div class="home-card">
-  <h2>Your address</h2>
-  <div>${addr}</div>
+  <h2 class="home-title">Outage information for ${addr}</h2>
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
   ${changes}
