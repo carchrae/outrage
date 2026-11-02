@@ -11,7 +11,7 @@
 
   const $ = (sel) => document.querySelector(sel);
   const els = {
-    form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
+    header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
     status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'),
   };
 
@@ -445,6 +445,7 @@
   function render() {
     const hideForm = !!state.home && !state.showSearch;
     if (els.form.hidden !== hideForm) els.form.hidden = hideForm;
+    if (els.header.hidden !== hideForm) els.header.hidden = hideForm;
     renderStatus();
     if (state.error || state.loading) { setHTML(els.results, ''); setHTML(els.home, ''); return; }
     const now = Date.now();
