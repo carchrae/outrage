@@ -14,35 +14,37 @@
     <div class="wrap">
       <h1>Planned outrage</h1>
       <p class="tagline">dont be mad, let the power guys go up the pole and fix it before it is blowing a huricane</p>
-      <p class="sub">Type your address to see whether a BC Hydro planned outage lists it.</p>
+      <p class="sub">Type your address to see whether a BC Hydro planned outage lists it, and whether an unplanned outage is affecting it right now.</p>
     </div>
   </header>
 
   <main class="wrap">
-    <form id="search-form" class="search" autocomplete="off">
-      <label class="sr-only" for="q">Address, street or municipality</label>
-      <div class="search-row">
-        <input id="q" name="q" type="search" placeholder="e.g. 7730 15th Ave, Burnaby" inputmode="text" spellcheck="false" enterkeyhint="search">
-        <button type="submit" class="btn primary">Search</button>
+    <form id="search-form" class="search" autocomplete="on">
+      <div class="field">
+        <label for="city">Municipality</label>
+        <input id="city" name="city" type="text" list="muni-list" placeholder="e.g. Bowen Island" autocomplete="address-level2" spellcheck="false">
+        <datalist id="muni-list"></datalist>
+      </div>
+      <div class="field">
+        <label for="street-address">Address</label>
+        <div class="search-row">
+          <input id="street-address" name="street-address" type="text" placeholder="e.g. 1400 Adams Rd" autocomplete="street-address" spellcheck="false" enterkeyhint="done">
+          <button type="submit" class="btn primary" id="save">Save Address</button>
+        </div>
       </div>
       <div class="search-options">
-        <label>
-          <span class="sr-only">Municipality</span>
-          <input id="muni" name="muni" type="search" list="muni-list" placeholder="Any municipality" autocomplete="off" spellcheck="false">
-          <datalist id="muni-list"></datalist>
-        </label>
         <label class="check"><input type="checkbox" id="past"> Include finished outages</label>
         <button type="button" id="clear" class="btn link">Clear</button>
       </div>
-      <p class="hint">Works with a full address, just a street name, or just a municipality. House numbers match anywhere inside a listed range, and Road/Rd, Crescent/Cres and similar abbreviations are treated the same. Unit numbers and postal codes are ignored.</p>
     </form>
 
+    <section id="home" class="home" aria-live="polite"></section>
     <section id="status" class="status" aria-live="polite"></section>
     <section id="results" class="results"></section>
   </main>
 
   <footer class="site-footer wrap">
-    <p>Unofficial. Data is read live from <a href="https://www.bchydro.com/power-outages/app/outage-list-planned.html" rel="noopener">BC Hydro's planned outage list</a> and may lag the official page. Address matching is based on how BC Hydro wrote the area description, so a street that is not listed here may still be affected. <span id="updated"></span></p>
+    <p>Unofficial. Data is read live from <a href="https://www.bchydro.com/power-outages/app/outage-list-planned.html" rel="noopener">BC Hydro's planned outage list</a> and <a href="https://www.bchydro.com/power-outages/app/outage-list.html" rel="noopener">current outage list</a> and may lag the official page. Address matching is based on how BC Hydro wrote the area description, so a street that is not listed here may still be affected. <span id="updated"></span></p>
   </footer>
 
   <script src="parse.js"></script>

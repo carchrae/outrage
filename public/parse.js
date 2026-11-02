@@ -71,6 +71,8 @@
   const LEAD_RE = new RegExp('^((?:' + NUM + ')(?:\\s*-\\s*(?:' + NUM + '))?)\\s+(\\S.*)$', 'i');
   const DASH_LEAD_RE = new RegExp('^-\\s*(' + NUM + ')\\s+(\\S.*)$', 'i');
   const LOCALITY_RE = /mile house$/i;
+  const BLOCK_RE = /^(\d+)\s+block\s+(?:of\s+)?(\S.*)$/i;
+  const BOUNDARY_RE = /^(north|south|east|west|north-?east|north-?west|south-?east|south-?west|n|s|e|w|ne|nw|se|sw)\s+of\s+(\S.*)$/i;
 
   function decodeEntities(s) {
     return s
@@ -200,6 +202,26 @@
         const numTok = parseNumberToken(tok);
         if (numTok) { pending.push(numTok); continue; }
 
+        // "3700 block BEAVER VALLEY RD" (unplanned outages): the hundred-block.
+        const block = tok.match(BLOCK_RE);
+        if (block) {
+          const lo = parseInt(block[1], 10);
+          const seg = makeSegment(cleanToken(block[2]), pending.concat([{ lo, hi: lo + 99, label: block[1] + ' block' }]), qualifier);
+          pending = [];
+          segments.push(seg); lastSegsInChunk.push(seg);
+          continue;
+        }
+
+        // "North of 64 AVE": a boundary of the affected area, not an affected street.
+        const boundary = tok.match(BOUNDARY_RE);
+        if (boundary) {
+          const seg = makeSegment(cleanToken(boundary[2]), [], qualifier);
+          seg.boundary = boundary[1];
+          seg.label = boundary[1] + ' of ' + seg.street;
+          segments.push(seg); lastSegsInChunk.push(seg);
+          continue;
+        }
+
         // "- 1268 Eagles Nest Rd" following a pending "351": treat as range.
         const dash = tok.match(DASH_LEAD_RE);
         if (dash && pending.length) {
@@ -287,6 +309,7 @@
       numbers: numbers.slice(),
       qualifier: qualifier || '',
       locality: '',
+      boundary: '',
       label: formatSegment(street, numbers),
     };
   }
@@ -414,6 +437,7 @@
       if (listed === true) level = ss >= 2 ? 5 : 3;
       else if (listed === null) level = ss >= 2 ? 4 : 2;
       else level = ss >= 2 ? 3 : 1;
+      if (seg.boundary) level = Math.min(level, 2); // the street only bounds the area
       if (!best || level > best.level || (level === best.level && ss > best.streetScore)) {
         best = { level, segment: seg, numberListed: listed, streetScore: ss };
       }

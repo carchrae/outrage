@@ -111,3 +111,18 @@ test('house numbers match anywhere inside a listed range, and Road/Rd are equiva
   // A bare name without a type still matches fully.
   assert.equal(P.matchOutage(P.parseQuery('1400 Adams', MUNIS), parsed).level, 5);
 });
+
+test('unplanned-outage area styles: hundred blocks and boundary streets', () => {
+  const p = P.parseArea('3700 block BEAVER VALLEY RD, BEAVER VALLEY RD-P117', MUNIS);
+  assert.equal(p.segments[0].key, 'beaver valley rd');
+  assert.deepEqual([p.segments[0].numbers[0].lo, p.segments[0].numbers[0].hi], [3700, 3799]);
+  assert.equal(P.matchOutage(P.parseQuery('3750 Beaver Valley Road', MUNIS), p).level, 5);
+  assert.equal(P.matchOutage(P.parseQuery('3850 Beaver Valley Road', MUNIS), p).numberListed, false);
+  const b = P.parseArea('North of 64 AVE, East of KILBURN PL, South of COMBER WAY, West of KING GEORGE BLV', MUNIS);
+  assert.equal(b.segments.length, 4);
+  assert.equal(b.segments[0].boundary, 'North');
+  assert.equal(b.segments[0].key, '64 ave');
+  assert.equal(b.segments[0].label, 'North of 64 AVE');
+  // A boundary street is never a strong match.
+  assert.ok(P.matchOutage(P.parseQuery('6400 64 Ave', MUNIS), b).level <= 2);
+});

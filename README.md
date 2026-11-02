@@ -7,12 +7,45 @@ street segments with house-number ranges, so you can type `7500 Kraft Crescent, 
 and see whether your house number falls inside a listed range, with the full
 address list shown instead of clipped.
 
+The municipality comes first and defaults to Bowen Island, since matching without one is poor.
+Results appear as you type. Until an address is saved, a prompt under the search box asks you to
+press Save Address (or Enter), which remembers the address in the browser. Every later visit opens on the saved
+address, flags what changed since the previous visit (new, rescheduled, cancelled, updated or
+no-longer-listed outages, plus unplanned outages that started or were resolved) and keeps a quiet
+history of every outage ever seen for it. Searching something else shows a panel for that address
+with the saved one underneath; Save Address switches to it, and "Clear my address and history"
+wipes everything.
+
+Unplanned outages come from BC Hydro's current-outage feed and are shown alongside planned ones:
+on the saved address when they list its street or hundred-block, and under any municipality search.
+
+The app checks the feeds when the page loads; reload to refresh. Background alerts are deliberately not
+built; `docs/push-alerts.md` holds the plan for doing it with Web Push without storing addresses server-side.
+
 No build step, no dependencies. Plain HTML, CSS and JavaScript in `public/`.
+
+## Browser storage
+
+Everything stays in the browser; nothing is sent anywhere except the outage feed request.
+
+| localStorage key | Contents |
+|---|---|
+| `outage-finder.home` | saved address and municipality |
+| `outage-finder.snapshot` | matches seen on the last visit, used to detect changes |
+| `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
+
+The "since your last visit" baseline is pinned in sessionStorage so a reload does not clear the
+notice. Changing or clearing the address resets the snapshot and history. The page always opens on
+the saved address; a `?q=` in the URL is only honoured when no address is saved.
 
 ## Data source
 
 - Planned outages: `https://www.bchydro.com/power-outages/app/outages-list-data-planned.json`
-- Current (unplanned) outages, not used by the UI yet: `.../outages-list-data-current.json`
+- Current (unplanned) outages: `https://www.bchydro.com/power-outages/app/outages-list-data-current.json`
+
+Both have the same shape (`regions[].outages[]` with a free-text `area`). Unplanned outages
+describe areas as hundred-blocks (`3700 block BEAVER VALLEY RD`) or boundaries (`North of 64 AVE`),
+which the parser understands; a boundary street never counts as a strong match.
 
 The feed does not send CORS headers, so the browser cannot fetch it directly.
 The app requests `/api/planned` on its own origin and relies on a server-side proxy.
