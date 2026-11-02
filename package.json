@@ -1,0 +1,12 @@
+{
+  "name": "bchydro-outage-finder",
+  "version": "1.0.0",
+  "description": "Find BC Hydro planned power outages by street address. Unofficial single-page app over BC Hydro's public JSON feed.",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "check-live": "node scripts/check-live.js"
+  },
+  "license": "ISC"
+}

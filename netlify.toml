@@ -1,0 +1,21 @@
+[build]
+  publish = "public"
+
+# Netlify proxies these paths server-side, which sidesteps the missing CORS
+# headers on BC Hydro's feed. The browser only ever talks to this site.
+[[redirects]]
+  from = "/api/planned"
+  to = "https://www.bchydro.com/power-outages/app/outages-list-data-planned.json"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/current"
+  to = "https://www.bchydro.com/power-outages/app/outages-list-data-current.json"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Cache-Control = "public, max-age=120"
