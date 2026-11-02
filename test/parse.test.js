@@ -126,3 +126,23 @@ test('unplanned-outage area styles: hundred blocks and boundary streets', () => 
   // A boundary street is never a strong match.
   assert.ok(P.matchOutage(P.parseQuery('6400 64 Ave', MUNIS), b).level <= 2);
 });
+
+test('street-only list inside a bold note: any house number matches, slashes expand', () => {
+  const area = "<b>Some premises on the following Streets will be impacted by this outage.\r\nAdams Rd, Arbutus Bay Ln/Rd, Cardena Dr/Rd, Park Rd/View Ln, Radar Hill, Grafton Rd, Green Rd, Highland Trail,</b><br/>Hilltop Pl, Sunset Dr/Ln/Rd";
+  const p = P.parseArea(area, ['Bowen Island']);
+  assert.deepEqual(p.notes, ['Some premises on the following Streets will be impacted by this outage.']);
+  const labels = p.segments.map((s) => s.label);
+  assert.deepEqual(labels, ['Adams Rd', 'Arbutus Bay Ln', 'Arbutus Bay Rd', 'Cardena Dr', 'Cardena Rd', 'Park Rd', 'Park View Ln', 'Radar Hill', 'Grafton Rd', 'Green Rd', 'Highland Trail', 'Hilltop Pl', 'Sunset Dr', 'Sunset Ln', 'Sunset Rd']);
+  assert.ok(p.segments.every((s) => s.numbers.length === 0 && s.locality === ''));
+  for (const q of ['1400 Adams Rd', '99 Adams Road', 'Adams Rd', '1 Cardena Rd', 'Park View Ln', 'Radar Hill']) {
+    const m = P.matchOutage(P.parseQuery(q, ['Bowen Island']), p);
+    assert.ok(m, q + ' should match');
+    assert.equal(m.level, 4, q);
+    assert.equal(m.streetScore, 3, q);
+    assert.equal(m.numberListed, null, q);
+  }
+  // Numbered listings still work exactly as before.
+  const p2 = P.parseArea('1160-1705 Adams Rd, Bowen Island', ['Bowen Island']);
+  assert.equal(P.matchOutage(P.parseQuery('1400 Adams Road', ['Bowen Island']), p2).level, 5);
+  assert.equal(P.matchOutage(P.parseQuery('1800 Adams Road', ['Bowen Island']), p2).level, 3);
+});

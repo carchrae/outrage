@@ -158,6 +158,13 @@
       const readsLikeNote = /\b(outage|outages|minutes|minute|between|approximately|customers|rescheduled|cancelled|note)\b/i.test(t);
       const looksLikeAddresses = /^impact area/i.test(t) || (startsWithNumber && hasSuffix(t) && !readsLikeNote);
       if (looksLikeAddresses) return t.replace(/^impact area:?\s*;?\s*/i, '');
+      // "Some premises on the following streets will be impacted. Adams Rd, Amelia Ln, ..."
+      // A note sentence followed by a street list: keep the sentence as a note, parse the list.
+      const split = splitNoteAndList(t);
+      if (split) {
+        if (split.note) notes.push(split.note.replace(/\s*;\s*/g, ' '));
+        return ' ; ' + split.list;
+      }
       if (t) notes.push(t.replace(/\s*;\s*/g, ' '));
       return ' ; ';
     });
@@ -177,9 +184,11 @@
     for (const chunk of chunks) {
       let pending = [];
       let lastSegsInChunk = [];
-      const tokens = chunk.split(',');
-      for (const rawTok of tokens) {
-        let tok = cleanToken(rawTok.replace(/\u0001/g, ',').replace(/\u0002/g, ';'));
+      const tokens = chunk.split(',').map((rawTok) => cleanToken(rawTok.replace(/\u0001/g, ',').replace(/\u0002/g, ';')));
+      let lastTokenIdx = -1;
+      tokens.forEach((t, i) => { if (t) lastTokenIdx = i; });
+      for (let ti = 0; ti < tokens.length; ti++) {
+        let tok = tokens[ti];
         if (!tok) continue;
         if (/^impact area\b/i.test(tok) || (/cont'?d\b/i.test(tok) && !/\d/.test(tok))) continue;
         tok = tok.replace(/^(?:and|&)\s+/i, '');
@@ -236,9 +245,7 @@
           const numbers = pending.concat([parseNumberToken(lead[1].replace(/\s+/g, ''))].filter(Boolean));
           pending = [];
           const street = cleanToken(lead[2]);
-          const seg = makeSegment(street, numbers, qualifier);
-          segments.push(seg);
-          lastSegsInChunk.push(seg);
+          for (const seg of makeSegments(street, numbers, qualifier)) { segments.push(seg); lastSegsInChunk.push(seg); }
           continue;
         }
 
@@ -251,7 +258,10 @@
 
         // Pure text token: a locality (municipality) or a named place.
         const lower = tok.toLowerCase();
-        const isLocality = muniSet.has(lower) || LOCALITY_RE.test(tok) || !hasSuffix(tok);
+        const knownLocality = muniSet.has(lower) || LOCALITY_RE.test(tok);
+        // "Radar Hill" in the middle of a street list is a street, not the locality of what came before.
+        const midList = !knownLocality && lastSegsInChunk.length > 0 && ti < lastTokenIdx;
+        const isLocality = knownLocality || (!hasSuffix(tok) && !midList);
         if (isLocality) {
           currentLocality = tok;
           for (const seg of lastSegsInChunk) if (!seg.locality) seg.locality = tok;
@@ -266,11 +276,9 @@
           continue;
         }
 
-        // Street with no leading number (e.g. "Whatcom Rd" after pending numbers).
-        const seg = makeSegment(tok, pending, qualifier);
+        // Street with no leading number (e.g. "Whatcom Rd" after pending numbers, or a street-only list).
+        for (const seg of makeSegments(tok, pending, qualifier)) { segments.push(seg); lastSegsInChunk.push(seg); }
         pending = [];
-        segments.push(seg);
-        lastSegsInChunk.push(seg);
       }
       if (pending.length) {
         segments.push(makeSegment('', pending, ''));
@@ -283,9 +291,11 @@
     return { notes, flags, segments, text };
   }
 
+  // "SE" or "Ave SE" extends the previous street; "Green Rd" is a street of its own.
   function isOnlySuffixWords(tok) {
     const words = streetKey(tok).split(' ').filter(Boolean);
-    return words.length > 0 && words.every((w) => SUFFIXES.has(w));
+    if (!words.length || !words.every((w) => SUFFIXES.has(w))) return false;
+    return words.length === 1 || DIRECTIONS.has(words[words.length - 1]);
   }
 
   function extendSegment(seg, extra) {
@@ -296,8 +306,45 @@
   }
 
   function hasSuffix(tok) {
-    const key = streetKey(tok);
+    const key = streetKey(tok.replace(/\//g, ' '));
     return key.split(' ').some((w) => SUFFIXES.has(w) && w.length > 1);
+  }
+
+  /**
+   * Split a bold note such as "Some premises on the following streets will be impacted.
+   * Adams Rd, Amelia Ln, ..." into the note sentence and the street list that follows it.
+   * Returns null when the text does not end in a list of streets.
+   */
+  function splitNoteAndList(t) {
+    const re = /[.!?:]\s+/g;
+    let m;
+    while ((m = re.exec(t))) {
+      const tail = t.slice(m.index + m[0].length);
+      if (isStreetList(tail)) return { note: t.slice(0, m.index + 1).trim(), list: tail };
+    }
+    return null;
+  }
+
+  /** True when text reads as a comma-separated list of streets (most items name a street type). */
+  function isStreetList(text) {
+    const items = text.split(/[,;]/).map(cleanToken).filter(Boolean);
+    if (items.length < 2) return false;
+    const streets = items.filter((it) => hasSuffix(it) && it.split(/\s+/).length <= 6);
+    return streets.length >= 2 && streets.length / items.length >= 0.6;
+  }
+
+  /** "Cardena Dr/Rd" -> ["Cardena Dr", "Cardena Rd"]; "Park Rd/View Ln" -> ["Park Rd", "Park View Ln"]. */
+  function expandSlashes(street) {
+    if (!/\S\/\S/.test(street)) return [street];
+    const parts = street.split('/').map(cleanToken).filter(Boolean);
+    const firstWords = parts[0].split(/\s+/);
+    if (parts.length < 2 || firstWords.length < 2 || !hasSuffix(firstWords[firstWords.length - 1])) return [street];
+    const base = firstWords.slice(0, -1).join(' ');
+    return parts.map((p, i) => (i === 0 ? p : base + ' ' + p));
+  }
+
+  function makeSegments(street, numbers, qualifier) {
+    return expandSlashes(street).map((name) => makeSegment(name, numbers, qualifier));
   }
 
   function makeSegment(street, numbers, qualifier) {

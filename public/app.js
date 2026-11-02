@@ -366,7 +366,11 @@
     else if (matches.nearby.length) summary += `${matches.nearby.length} unplanned outage${matches.nearby.length === 1 ? '' : 's'} elsewhere in ${esc(muni || matches.q.muni)} right now, none listing ${whose} street. `;
     if (!n) summary += `No planned outage lists ${whose} street.`;
     else if (listed) summary += `<strong>${listed}</strong> planned outage${listed === 1 ? '' : 's'} list${listed === 1 ? 's' : ''} ${whose} address${n > listed ? `, and ${n - listed} more list${n - listed === 1 ? 's' : ''} ${whose} street` : ''}.`;
-    else summary += `<strong>${n}</strong> planned outage${n === 1 ? '' : 's'} list${n === 1 ? 's' : ''} ${whose} street${matches.q.number ? `, but not ${whose} house number` : ''}.`;
+    else {
+      // Street-only listings (no house numbers given) should not claim the number is excluded.
+      const excluded = planned.some((i) => i.match.numberListed === false);
+      summary += `<strong>${n}</strong> planned outage${n === 1 ? '' : 's'} list${n === 1 ? 's' : ''} ${whose} street${matches.q.number && excluded ? `, but not ${whose} house number` : ''}.`;
+    }
     if (matches.weak.length) summary += ` ${matches.weak.length} similar street name${matches.weak.length === 1 ? '' : 's'} shown below.`;
     return summary;
   }
