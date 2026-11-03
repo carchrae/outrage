@@ -44,12 +44,12 @@ body {
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 a { color: var(--accent); }
-.wrap { max-width: 860px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 8px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 .site-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 20px 0 16px; }
 .site-header[hidden] { display: none; }
-.site-header .wrap, .site-footer.wrap { padding-left: 16px; padding-right: 16px; }
+.site-header .wrap, .site-footer.wrap { padding-left: 8px; padding-right: 8px; }
 .site-header h1 { margin: 0 0 4px; font-size: 1.8rem; letter-spacing: -0.01em; }
 .tagline { margin: 0; font-size: 1.05rem; font-style: italic; }
 .site-header .sub { margin: 8px 0 0; color: var(--muted); font-size: 0.95rem; }
@@ -74,13 +74,13 @@ a { color: var(--accent); }
 .hint { margin: 8px 0 0; color: var(--muted); font-size: 0.9rem; }
 
 .status { margin: 8px 0 16px; color: var(--muted); }
-.status .error { color: var(--danger); padding: 10px 0; border-top: 2px solid var(--danger); }
+.status .error { color: var(--danger); padding: 10px 12px; border-top: 2px solid var(--danger); }
 .status strong { color: var(--text); }
 
 .results { display: grid; gap: 14px; padding-bottom: 32px; }
 
 .card {
-  background: var(--surface); border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 0;
+  background: var(--surface); border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 12px;
 }
 .card.hit { border-color: var(--hit); }
 .card.cancelled { opacity: 0.75; }
@@ -122,11 +122,11 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 
 /* ---- your address panel ---- */
 .home { margin: 4px 0 12px; }
-.home-card.compact { padding: 10px 0; font-size: 0.95rem; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.home-card.compact { padding: 10px 12px; font-size: 0.95rem; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
 .home-card.compact .addr { font-size: 1rem; }
 .muted { color: var(--muted); }
 .btn.small { padding: 5px 10px; font-size: 0.9rem; }
-.home-card { background: var(--surface); border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 0; }
+.home-card { background: var(--surface); border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 12px; }
 .home-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
 .home-card .home-title { font-weight: 500; color: var(--muted); }
 .home-card .home-title .addr { color: var(--text); }
@@ -171,6 +171,6 @@ details.more-streets { margin-top: 8px; font-size: 0.9rem; color: var(--muted); 
 details.more-streets summary { cursor: pointer; }
 details.more-streets .addresses { margin-top: 6px; }
 /* ---- save prompt ---- */
-.save-alert { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 12px 0; border-top: 2px solid var(--warn); border-bottom: 2px solid var(--warn); color: var(--warn); }
+.save-alert { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 12px 12px; border-top: 2px solid var(--warn); border-bottom: 2px solid var(--warn); color: var(--warn); }
 .save-alert div { flex: 1 1 320px; }
 .save-alert b { color: inherit; }
