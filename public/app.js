@@ -921,7 +921,7 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
   const DEBOUNCE_MS = 400;
   let timer = 0;
   /**
-   * A full address typed, pasted or autofilled into the address line ("1261 Adams Rd, Bowen Island, BC V0N 1G2")
+   * A full address typed, pasted or autofilled into the address line ("742 Evergreen Terrace, Bowen Island, BC V0N 1G0")
    * carries its municipality: move that into the Municipality field and keep only the street part.
    * Only a municipality the feeds know is moved, so a street called "Hope" or an unknown town is left alone.
    */
