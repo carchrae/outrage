@@ -19,7 +19,7 @@ const STORE = 'kv';
 // the last copy of each feed is kept so an outage with no connectivity still shows something.
 // Chrome on Android also wants a fetch handler before it offers a real install.
 const CACHE = 'outage-v1';
-const SHELL = ['/', '/style.css', '/parse.js', '/matcher.js', '/alerts.js', '/app.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+const SHELL = ['/', '/style.css', '/parse.js', '/matcher.js', '/alerts.js', '/app.js', '/manifest.webmanifest', '/munis.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil((async () => {

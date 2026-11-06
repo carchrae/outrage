@@ -9,7 +9,8 @@
     "check-live": "node scripts/check-live.js",
     "build": "node scripts/stamp.js",
     "icons": "node scripts/make-icons.js",
-    "vapid": "web-push generate-vapid-keys"
+    "vapid": "web-push generate-vapid-keys",
+    "geocode": "node scripts/geocode-munis.js"
   },
   "license": "ISC",
   "dependencies": {

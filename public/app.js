@@ -14,7 +14,7 @@
   const $ = (sel) => document.querySelector(sel);
   const els = {
     header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
-    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'),
+    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), locate: $('#locate'),
   };
 
   const HOME_KEY = 'outage-finder.home';
@@ -23,6 +23,8 @@
   const HIST_KEY = 'outage-finder.history';
   const HIST_MAX = 300;
   const DEFAULT_MUNI = 'Bowen Island';
+  const GEO_KEY = 'outage-finder.geo'; // 'declined' once the location prompt was refused, so it is not repeated
+  const GEO_MAX_KM = 60; // a centroid further than this is not a guess worth making
 
   const state = {
     outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
@@ -58,6 +60,7 @@
       render();
       document.documentElement.removeAttribute('data-boot');
       if (A) A.register().catch(() => {});
+      guessMuni(false);
       if (A && state.home && !state.error) {
         A.mirror('home', state.home); A.sync(state.home, state.munis);
         if (A.standalone()) maybeOfferAlerts(`Turn on alerts for ${homeLabel()} so this app can tell you when something changes.`);
@@ -98,6 +101,59 @@
     }
     state.updatedDate = data.updatedDate || Date.now();
     fillMuniSelect();
+  }
+
+  // ------------------------------------------------------------ location
+
+  let muniCentroids = null;
+  async function loadCentroids() {
+    if (muniCentroids) return muniCentroids;
+    try { muniCentroids = await (await fetch('/munis.json')).json(); } catch (e) { muniCentroids = {}; }
+    return muniCentroids;
+  }
+
+  function nearestMuni(lat, lon, centroids) {
+    const toRad = (d) => (d * Math.PI) / 180;
+    let best = null;
+    for (const [name, c] of Object.entries(centroids)) {
+      const dLat = toRad(c.lat - lat), dLon = toRad(c.lon - lon);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat)) * Math.cos(toRad(c.lat)) * Math.sin(dLon / 2) ** 2;
+      const km = 2 * 6371 * Math.asin(Math.sqrt(a));
+      if (!best || km < best.km) best = { name, km };
+    }
+    return best && best.km <= GEO_MAX_KM ? best.name : null;
+  }
+
+  /**
+   * Guess the municipality from the device's location. Never touches a saved address or a municipality
+   * the visitor typed or arrived with; it only replaces the Bowen Island default on a fresh visit.
+   * With manual=true (the "Use my location" button) it always asks and always applies the result.
+   */
+  async function guessMuni(manual) {
+    if (!('geolocation' in navigator)) return;
+    if (!manual) {
+      if (state.home || !state.munis.length) return;
+      if (new URLSearchParams(location.search).get('muni')) return;
+      if (normText(state.muni) !== normText(DEFAULT_MUNI)) return;
+      try { if (localStorage.getItem(GEO_KEY) === 'declined') return; } catch (e) { /* ignore */ }
+      if (navigator.permissions && navigator.permissions.query) {
+        try { const p = await navigator.permissions.query({ name: 'geolocation' }); if (p.state === 'denied') return; } catch (e) { /* unsupported */ }
+      }
+    }
+    let pos;
+    try {
+      pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false, timeout: 8000, maximumAge: 3600e3 }));
+    } catch (err) {
+      if (err && err.code === 1) { try { localStorage.setItem(GEO_KEY, 'declined'); } catch (e) { /* ignore */ } }
+      if (manual) { state.alertsMsg = ''; setHTML(els.status, `<span class="muted">Could not get your location${err && err.code === 1 ? ': permission was refused' : ''}.</span>`); }
+      return;
+    }
+    const name = nearestMuni(pos.coords.latitude, pos.coords.longitude, await loadCentroids());
+    if (!name || !state.munis.some((m) => m === name)) return;
+    // The visitor may have started typing while the prompt was open.
+    if (!manual && (state.home || document.activeElement === els.muni || normText(state.muni) !== normText(DEFAULT_MUNI))) return;
+    state.muni = name; els.muni.value = name;
+    writeState(); render();
   }
 
   let muniListSig = '';
@@ -859,6 +915,8 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
   els.muni.addEventListener('input', onMuni);
   els.muni.addEventListener('change', onMuni);
   els.past.addEventListener('change', () => { state.past = els.past.checked; writeState(); render(); });
+  if ('geolocation' in navigator) els.locate.hidden = false;
+  els.locate.addEventListener('click', () => guessMuni(true));
   els.clear.addEventListener('click', () => { state.query = ''; state.muni = DEFAULT_MUNI; els.q.value = ''; els.muni.value = state.muni; writeState(); render(); els.q.focus(); });
   els.results.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-muni]');

@@ -32,6 +32,14 @@ See "Push alerts" below and `docs/push-alerts.md` for the design.
 The site itself is plain HTML, CSS and JavaScript in `public/` with no build step. The two dependencies
 (`web-push`, `@netlify/blobs`) are only used by the Netlify functions.
 
+## Municipality guess
+
+On a first visit with no saved address, the page asks for the device's location once and picks the
+nearest municipality from `public/munis.json` (centroids for every name the feeds use, built by
+`npm run geocode` from OpenStreetMap's Nominatim; nothing is looked up at runtime). It falls back to
+Bowen Island, never overrides a saved address or a typed or linked municipality, and does not ask
+again after a refusal. "Use my location" under the form re-runs the guess on demand.
+
 ## Browser storage
 
 Everything stays in the browser; nothing is sent anywhere except the outage feed request, and, only
@@ -43,6 +51,7 @@ when alerts are turned on, the street name and municipality (see "Push alerts").
 | `outage-finder.snapshot` | matches seen on the last visit, used to detect changes |
 | `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
 | `outage-finder.alerts` | street, municipality and push endpoint registered for alerts |
+| `outage-finder.geo` | `declined` once the location prompt was refused |
 
 The address and snapshot are also mirrored into IndexedDB (database `outage`, store `kv`) because
 the service worker cannot read localStorage.
