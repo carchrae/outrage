@@ -202,7 +202,8 @@
       if (state.muni && !muniMatch) continue;
       hits.push({ o, match, muniMatch });
     }
-    hits.sort((a, b) => (b.muniMatch - a.muniMatch) || (b.match.level - a.match.level) || (b.match.streetScore - a.match.streetScore) || (a.o.dateOff - b.o.dateOff));
+    // In time order: what is happening now first, then by start time; match quality only breaks ties.
+    hits.sort((a, b) => (b.muniMatch - a.muniMatch) || (a.o.dateOff - b.o.dateOff) || (b.match.level - a.match.level) || (b.match.streetScore - a.match.streetScore));
     const currentLabel = muniSet && muniSet.size === 1 ? [...muniSet][0].replace(/\b\w/g, (c) => c.toUpperCase()) : '';
     if (hits.length) return { mode: 'address', q, items: hits, current, currentLabel };
 
@@ -517,6 +518,16 @@
     if (r.mode === 'overview') return renderOverview();
     const tags = atHome && state.diff ? state.diff.byId : {};
     const parts = [];
+    // Unplanned outages are happening right now, so they come before anything scheduled.
+    const hasPlanned = r.items.length > 0;
+    if (r.current && r.current.length) {
+      const label = r.currentLabel ? ` in ${esc(r.currentLabel)}` : '';
+      parts.push(`<p class="group-head">Happening now${label}</p>`);
+      parts.push(...r.current.map((i) => card(i, r.q, now, tags[i.o.id])));
+      if (hasPlanned) parts.push(`<p class="group-head">Planned</p>`);
+    } else if (state.currentError) {
+      parts.push(`<p class="hint">Unplanned outages could not be loaded (${esc(state.currentError)}).</p>`);
+    }
     if (r.mode === 'address') {
       const strong = r.items.filter((i) => i.muniMatch);
       const other = r.items.filter((i) => !i.muniMatch);
@@ -527,13 +538,6 @@
       }
     } else {
       parts.push(...r.items.map((i) => card(i, r.q, now)));
-    }
-    if (r.current && r.current.length) {
-      const label = r.currentLabel ? ` in ${esc(r.currentLabel)}` : '';
-      parts.push(`<p class="group-head">Unplanned outages right now${label}</p>`);
-      parts.push(...r.current.map((i) => card(i, r.q, now, tags[i.o.id])));
-    } else if (state.currentError) {
-      parts.push(`<p class="hint">Unplanned outages could not be loaded (${esc(state.currentError)}).</p>`);
     }
     if (atHome) parts.push(renderHistory(now));
     setHTML(els.results, parts.join(''));
