@@ -126,8 +126,8 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
   .search-row .btn.primary { width: 100%; }
   .card .when .dur { display: block; font-size: 0.95rem; }
 }
-.nearby { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.92rem; }
-.nearby-head { font-weight: 600; margin-bottom: 4px; }
+.nearby { margin: 14px 0 0; font-size: 0.92rem; }
+.nearby-head { font-weight: 600; color: var(--danger); margin-bottom: 4px; }
 .nearby ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .nearby .where { display: block; }
 .nearby .sub { display: block; color: var(--muted); font-size: 0.88rem; }
@@ -141,7 +141,8 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .home-card { border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 12px; }
 .home-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
 .home-card .home-title { margin: 0; font-size: 1.25rem; font-weight: 700; }
-.home-card .home-subtitle { margin: 2px 0 8px; }
+.home-card .home-subtitle { margin: 2px 0 0; }
+.home-card .title-row + .home-actions { margin: 4px 0 10px; }
 .home-card .addr { font-size: 1.05rem; font-weight: 500; }
 .home-card .addr .muni { color: var(--muted); font-weight: 400; }
 .home-form { display: grid; gap: 8px; }

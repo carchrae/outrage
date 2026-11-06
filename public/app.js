@@ -409,7 +409,6 @@
   function nearbyBox(matches, now) {
     const near = matches.nearby.filter((i) => i.o.kind === 'current');
     if (!near.length) return '';
-    const muni = state.home.muni || matches.q.muni || '';
     const rows = near.map(({ o }) => {
       const where = o.parsed.segments.length ? o.parsed.segments.map((s) => s.label).join(', ') : o.parsed.text;
       const bits = [o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`];
@@ -417,7 +416,7 @@
       if (o.dateOn) bits.push(`power back ${fmtDateTime(o.dateOn)}`);
       return `<li><span class="where">${esc(where)}</span><span class="sub">${esc(bits.join(' · '))}</span></li>`;
     });
-    return `<div class="nearby"><div class="nearby-head">${near.length} unplanned outage${near.length === 1 ? '' : 's'} near you${muni ? ' in ' + esc(muni) : ''}</div><ul>${rows.join('')}</ul></div>`;
+    return `<div class="nearby card current"><div class="nearby-head">${near.length} unplanned outage${near.length === 1 ? '' : 's'} near you</div><ul>${rows.join('')}</ul></div>`;
   }
 
   /** The matched outages' times, one line each; outages happening now are in the live box instead. */
@@ -487,15 +486,15 @@
     const install = button ? `<span class="install">${button}</span>` : '';
     setHTML(els.home, `<div class="home-card">
   <div class="title-row"><div><h2 class="home-title">Outage at</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
+  <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-forget">Clear my address and history</a></p>
   ${liveStatus(matches, now)}
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
-  ${state.showMore ? '' : nearbyBox(matches, now)}
   ${changes}
   ${alertsControl()}
-  <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-forget">Clear my address and history</a></p>
   ${more}
-</div>`);
+</div>
+${state.showMore ? '' : nearbyBox(matches, now)}`);
   }
 
   /** The push-alert toggle for the saved address. Empty when the browser or the deploy cannot do push. */
