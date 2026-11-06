@@ -615,7 +615,7 @@ ${state.showMore ? '' : nearbyBox(matches, now)}`);
   }
 
   const ALERT_FACTS = {
-    hourly: 'We check BC Hydro once an hour, so an alert can be up to an hour behind their website.',
+    cadence: 'We check BC Hydro every 10 minutes, so an alert can be up to 10 minutes behind their website.',
     what: 'You get an alert when an outage listing your street is added, changed, cancelled or removed.',
     street: 'BC Hydro sometimes lists a whole street, so an alert does not always mean your house is affected. Open the page to see the details.',
     privacy: 'Your street name and town are kept on our server so we know what to send you. Your house number stays on this device.',
@@ -624,7 +624,7 @@ ${state.showMore ? '' : nearbyBox(matches, now)}`);
 
   /** Alert limitations for this device only. */
   function alertFacts(d) {
-    const facts = [ALERT_FACTS.hourly, ALERT_FACTS.what, ALERT_FACTS.street];
+    const facts = [ALERT_FACTS.cadence, ALERT_FACTS.what, ALERT_FACTS.street];
     if (d.ios) facts.push('If you do not open the app for a few weeks, iPhone may stop the alerts. Opening it again turns them back on.');
     else if (d.android) facts.push('Your browser needs permission to show notifications. Battery saver settings can delay alerts by a few hours.');
     else facts.push('Your browser needs permission to show notifications for this site.');

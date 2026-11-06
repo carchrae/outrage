@@ -1,5 +1,5 @@
 /*
- * Service worker for Outage: turns a push from the hourly feed check into a notification.
+ * Service worker for Outage: turns a push from the 10-minute feed check into a notification.
  *
  * The server only knows the subscriber's street. On a push the worker fetches both feeds through the
  * site's own /api proxy, matches the full saved address (read from IndexedDB, mirrored there by the

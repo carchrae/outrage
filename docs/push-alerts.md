@@ -42,7 +42,7 @@ means it must know something about where each subscriber is.
 
 When someone saves an address, the page sends the server only a normalized street-and-municipality key, such as
 `15 ave|burnaby`, together with the push subscription. House number, unit, snapshot and history stay in the
-browser. The hourly job diffs the feeds, works out which streets each added, changed or removed outage lists, and
+browser. The scheduled job (every 10 minutes) diffs the feeds, works out which streets each added, changed or removed outage lists, and
 pushes only to subscriptions on those streets, with the affected outage ids as the payload. The service worker
 then fetches the feeds through the existing `/api` proxy, runs the full matcher against the locally stored
 address, diffs against the local snapshot, and shows a notification like the on-page notice. Because the server
@@ -60,23 +60,23 @@ On the device                                        On the device
               v                                                |                            v
 On Netlify                                                     |
 +----------------------------+   reads subscriptions   +-------+----------------------+     |
-| Subscribe function         | ----------------------> | Hourly cron function         |     |
+| Subscribe function         | ----------------------> | Cron function (10 min)       |     |
 | stores push endpoint and   |                         | fetch feeds, diff vs last    |     |
 | street key in Netlify Blobs|                         | copy, push to matching streets|    |
 +----------------------------+                         +-------+----------------------+     |
-                                                               ^ hourly fetch                |
+                                                               ^ fetch every 10 min          |
 External                                                       |                            |
                                                        +-------+----------------------------+
                                                        | BC Hydro feeds (planned + current JSON, no CORS, via /api) |
                                                        +------------------------------------+
 ```
 
-The subscribe step runs once per saved address; the cron step repeats hourly and only pushes when a listed street
+The subscribe step runs once per saved address; the cron step repeats every 10 minutes and only pushes when a listed street
 changed.
 
 ## Server side on Netlify
 
-- **Scheduled function** `netlify/functions/check-feeds.mjs` on an hourly cron. It fetches both feeds, loads the
+- **Scheduled function** `netlify/functions/check-feeds.mjs` on a 10-minute cron (originally hourly). It fetches both feeds, loads the
   previous copy from Blobs, and computes added, changed and removed outages by id and by their `lastUpdated`,
   `dateOff`, `dateOn` and `area` fields.
 - **Street extraction** reuses `public/parse.js` unchanged: each affected outage's segments give the street keys
@@ -127,7 +127,7 @@ all work.
 
 About half a day: two Netlify functions, the Blobs store, the service worker, the IndexedDB migration and the
 opt-in UI. `web-push` would be the project's first dependency and `@netlify/blobs` the second. Netlify's free
-tier covers an hourly function and a few hundred subscriptions.
+tier covers a 10-minute function and a few hundred subscriptions.
 
 - [ ] Should planned-outage "finished" events push, or only new, rescheduled, cancelled and unplanned ones?
       Proposed: not finished.

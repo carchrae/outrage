@@ -25,7 +25,7 @@ Unplanned outages come from BC Hydro's current-outage feed and are shown alongsi
 on the saved address when they list its street or hundred-block, and under any municipality search.
 
 The app checks the feeds when the page loads; reload to refresh. "Alert me when this changes" on the saved
-address turns on push alerts: an hourly check on Netlify diffs the feeds and pushes to the browsers whose
+address turns on push alerts: a check on Netlify every 10 minutes diffs the feeds and pushes to the browsers whose
 street is touched, and the service worker then matches the full address locally and shows a notification.
 See "Push alerts" below and `docs/push-alerts.md` for the design.
 
@@ -89,7 +89,7 @@ the push subscription. The house number, unit, snapshot and history never leave 
 
 - `netlify/functions/subscribe.mjs` serves `POST` and `DELETE /api/subscribe` and keeps one record
   per push endpoint in Netlify Blobs (store `push`).
-- `netlify/functions/check-feeds.mjs` runs hourly. It fetches both feeds, keeps only the outages
+- `netlify/functions/check-feeds.mjs` runs every 10 minutes. It fetches both feeds, keeps only the outages
   that list a subscribed street, diffs that against the copy from the previous run, and pushes to
   the subscriptions on the streets that changed. The payload is just outage ids. The stored copy
   records which streets it covers, so a street subscribed since the last run gets its baseline
@@ -133,7 +133,7 @@ npm run check-live # fetches the live feed and reports how well the parser handl
 
 `npm start` generates a throwaway VAPID key for the run (when `web-push` is installed) and keeps
 push subscriptions in memory, so the Install and alerts buttons can be tried locally; set
-`VAPID_PUBLIC_KEY` to use your own key. No pushes are sent locally, since the hourly check only
+`VAPID_PUBLIC_KEY` to use your own key. No pushes are sent locally, since the scheduled check only
 runs on Netlify. `netlify dev` also works if you have the Netlify CLI installed.
 
 ## How matching works

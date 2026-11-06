@@ -1,5 +1,5 @@
 /*
- * Hourly scheduled function: fetch both BC Hydro feeds, diff them against the copy kept from
+ * Scheduled function, every 10 minutes: fetch both BC Hydro feeds, diff them against the copy kept from
  * the previous run, and push to the subscribers whose street is listed by an outage that was
  * added, changed or removed. The push payload only carries outage ids; the service worker on
  * the device does the real matching against the saved address.
@@ -11,7 +11,7 @@ import { getStore } from '@netlify/blobs';
 import webpush from 'web-push';
 import { slimFeed, collectMunis, diffFeeds, pickSubscribers, pruneToSubscribers } from './lib/feed-diff.mjs';
 
-export const config = { schedule: '@hourly' };
+export const config = { schedule: '*/10 * * * *' };
 
 const FEEDS = {
   planned: 'https://www.bchydro.com/power-outages/app/outages-list-data-planned.json',

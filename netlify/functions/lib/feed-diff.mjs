@@ -1,5 +1,5 @@
 /*
- * Pure helpers for the hourly feed check: what changed between two copies of the BC Hydro
+ * Pure helpers for the 10-minute feed check: what changed between two copies of the BC Hydro
  * feeds, which streets each change touches, and which subscribers care. No I/O here so it
  * can be unit tested.
  */
