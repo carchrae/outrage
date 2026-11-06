@@ -89,9 +89,16 @@ function idbGet(key) {
 }
 
 async function fetchJSON(url) {
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+  try {
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch (err) {
+    // Offline or the proxy failed: the last copy the page fetched is better than nothing.
+    const cached = await caches.match(url, { ignoreSearch: true }).catch(() => null);
+    if (cached) return cached.json();
+    throw err;
+  }
 }
 
 async function notify(payload) {
@@ -120,7 +127,8 @@ async function notify(payload) {
         body = 'An outage listing on your street was updated or removed. Open to see the latest.';
       }
     } catch (err) {
-      body = 'Could not check the latest details. Open to see what changed.';
+      console.error('push check failed', err);
+      body = `Could not check the latest details (${err && err.message ? err.message : err}). Open to see what changed.`;
     }
   }
   await self.registration.showNotification(title, {
@@ -142,10 +150,10 @@ function describe(d) {
 
 const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' });
 const timeFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
-function fmtTime(ms) { return timeFmt.format(new Date(ms)).replace(/\./g, '').replace(/\s?([ap])m/i, ' $1.m.'); }
-function fmtDateTime(ms) { return `${dayFmt.format(new Date(ms))} ${fmtTime(ms)}`; }
+function fmtTime(ms) { return Number.isFinite(ms) ? timeFmt.format(new Date(ms)).replace(/\./g, '').replace(/\s?([ap])m/i, ' $1.m.') : '?'; }
+function fmtDateTime(ms) { return Number.isFinite(ms) ? `${dayFmt.format(new Date(ms))} ${fmtTime(ms)}` : 'unknown time'; }
 function fmtWindow(off, on) {
-  if (!on) return fmtDateTime(off);
+  if (!Number.isFinite(on)) return fmtDateTime(off);
   const sameDay = dayFmt.format(new Date(off)) === dayFmt.format(new Date(on));
   return sameDay ? `${dayFmt.format(new Date(off))} ${fmtTime(off)} – ${fmtTime(on)}` : `${fmtDateTime(off)} – ${fmtDateTime(on)}`;
 }
