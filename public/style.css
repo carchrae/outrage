@@ -193,6 +193,18 @@ html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-b
 .dialog .actions { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: flex-end; align-items: center; }
 .upcoming li .sub { display: block; color: var(--muted); font-size: 0.9rem; }
 .home-more { margin: 12px 0 0; }
+.live { margin: 10px 0 4px; padding: 12px 14px; border-left: 4px solid var(--danger); background: var(--danger-bg); border-radius: 8px; }
+.live.planned { border-color: var(--warn); background: var(--warn-bg); }
+.live-head { font-weight: 700; font-size: 1.1rem; color: var(--danger); margin-bottom: 8px; }
+.live.planned .live-head { color: var(--warn); }
+.live-rows { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; align-items: baseline; }
+.live-rows > div { display: contents; }
+.live-rows dt { color: var(--muted); font-size: 0.9rem; }
+.live-rows dd { margin: 0; overflow-wrap: anywhere; }
+.crew-bar { display: flex; gap: 4px; margin-top: 5px; max-width: 220px; }
+.crew-bar span { flex: 1; height: 6px; border-radius: 3px; background: var(--border); }
+.crew-bar span.done { background: var(--danger); }
+.live.planned .crew-bar span.done { background: var(--warn); }
 .home-alerts { margin: 10px 0 0; font-size: 0.9rem; }
 .home-alerts .alerts-on { color: var(--hit); font-weight: 600; }
 .home-alerts .alerts-msg { color: var(--warn); }

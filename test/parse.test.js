@@ -157,3 +157,10 @@ test('a list of bare street names does not treat the last name as a locality', (
   assert.equal(q.segments.length, 3);
   assert.ok(q.segments.every((s) => s.locality === 'Horsefly'));
 });
+
+test('block ranges: "9500 - 9600 block X" covers 9500-9699', () => {
+  const p = P.parseArea('9500 - 9600 block SHELEST DR, 700 - 800 block HORNBY RD, 0 block STUART DR', []);
+  assert.deepEqual(p.segments.map((s) => [s.street, s.numbers[0].lo, s.numbers[0].hi]), [['SHELEST DR', 9500, 9699], ['HORNBY RD', 700, 899], ['STUART DR', 0, 99]]);
+  assert.equal(P.matchOutage(P.parseQuery('9550 Shelest Dr', []), p).level, 5);
+  assert.equal(P.matchOutage(P.parseQuery('9750 Shelest Dr', []), p).level, 3);
+});

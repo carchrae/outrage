@@ -71,7 +71,7 @@
   const LEAD_RE = new RegExp('^((?:' + NUM + ')(?:\\s*-\\s*(?:' + NUM + '))?)\\s+(\\S.*)$', 'i');
   const DASH_LEAD_RE = new RegExp('^-\\s*(' + NUM + ')\\s+(\\S.*)$', 'i');
   const LOCALITY_RE = /mile house$/i;
-  const BLOCK_RE = /^(\d+)\s+block\s+(?:of\s+)?(\S.*)$/i;
+  const BLOCK_RE = /^(\d+)(?:\s*-\s*(\d+))?\s+block\s+(?:of\s+)?(\S.*)$/i;
   const BOUNDARY_RE = /^(north|south|east|west|north-?east|north-?west|south-?east|south-?west|n|s|e|w|ne|nw|se|sw)\s+of\s+(\S.*)$/i;
 
   function decodeEntities(s) {
@@ -211,11 +211,13 @@
         const numTok = parseNumberToken(tok);
         if (numTok) { pending.push(numTok); continue; }
 
-        // "3700 block BEAVER VALLEY RD" (unplanned outages): the hundred-block.
+        // "3700 block BEAVER VALLEY RD" or "9500 - 9600 block SHELEST DR" (unplanned outages): hundred-blocks.
         const block = tok.match(BLOCK_RE);
         if (block) {
           const lo = parseInt(block[1], 10);
-          const seg = makeSegment(cleanToken(block[2]), pending.concat([{ lo, hi: lo + 99, label: block[1] + ' block' }]), qualifier);
+          const hi = (block[2] ? parseInt(block[2], 10) : lo) + 99;
+          const label = (block[2] ? block[1] + '-' + block[2] : block[1]) + ' block';
+          const seg = makeSegment(cleanToken(block[3]), pending.concat([{ lo, hi, label }]), qualifier);
           pending = [];
           segments.push(seg); lastSegsInChunk.push(seg);
           continue;

@@ -303,7 +303,7 @@
     const n = planned.length;
     const listed = planned.filter((i) => i.match.numberListed === true).length;
     let summary = '';
-    if (out.length) summary += `<strong class="danger">An unplanned outage is affecting ${whose} street right now.</strong> `;
+    if (out.length && whose !== 'your') summary += `<strong class="danger">An unplanned outage is affecting ${whose} street right now.</strong> `;
     if (!n) summary += `No planned outage lists ${whose} street.`;
     else if (listed) summary += `<strong>${listed}</strong> planned outage${listed === 1 ? '' : 's'} list${listed === 1 ? 's' : ''} ${whose} address${n > listed ? `, and ${n - listed} more list${n - listed === 1 ? 's' : ''} ${whose} street` : ''}.`;
     else {
@@ -316,10 +316,43 @@
     return summary;
   }
 
-  /** The matched outages' times, one line each, newest first for unplanned then soonest planned. */
+  const CREW_STEPS = ['NEW', 'ASSIGNED', 'ENROUTE', 'ONSITE'];
+
+  /** Is this matched outage happening right now (unplanned, or a planned one inside its window)? */
+  function isLive(o, now) { return o.kind === 'current' || statusOf(o, now) === 'in progress'; }
+
+  /** A prominent box for each outage affecting the street right now: crew status, when power is expected back. */
+  function liveStatus(matches, now) {
+    let live = matches.strong.filter((i) => isLive(i.o, now));
+    // Planned work in progress shows up in both feeds; keep the unplanned-feed copy, which carries crew status.
+    const current = live.filter((i) => i.o.kind === 'current');
+    live = live.filter((i) => i.o.kind === 'current' || !current.some((c) => c.o.municipality === i.o.municipality && (Math.abs((c.o.dateOn || 0) - (i.o.dateOn || 1)) < 3600e3 || Math.abs(c.o.dateOff - i.o.dateOff) < 3600e3)));
+    return live.map(({ o, match }) => {
+      const planned = o.kind === 'planned' || /planned work/i.test(o.cause || '');
+      const rows = [];
+      if (o.kind === 'current') {
+        const idx = CREW_STEPS.indexOf(o.crewStatus);
+        const bar = idx >= 0 ? `<span class="crew-bar" title="${esc(o.crewStatusDescr || '')}">${CREW_STEPS.map((s, i) => `<span class="${i <= idx ? 'done' : ''}"></span>`).join('')}</span>` : '';
+        rows.push(['Crew', `<b>${esc(o.crewStatusDescr || 'No crew information')}</b>${bar}`]);
+      }
+      let back;
+      if (o.dateOn) back = `<b>${esc(fmtDateTime(o.dateOn))}</b> <span class="muted">(${o.dateOn > now ? esc(fmtRelative(o.dateOn - now)) : 'past the estimate'})</span>`;
+      else back = `<b>No estimate yet</b>${o.crewEta && o.showEta !== false && o.kind === 'current' ? ` <span class="muted">· crew expected ${esc(fmtDateTime(o.crewEta))} (${esc(fmtRelative(o.crewEta - now))})</span>` : ''}`;
+      rows.push(['Power back', back]);
+      rows.push(['Out since', `${esc(fmtDateTime(o.dateOff))} <span class="muted">(${esc(fmtAgo(now - o.dateOff))})</span>`]);
+      if (o.cause) rows.push(['Cause', esc(o.cause)]);
+      rows.push(['Affected', `${o.numCustomersOut != null ? esc(fmtNum(o.numCustomersOut)) + ' customers · ' : ''}${esc(match.segment.label)}`]);
+      if (o.crewStatusNote) rows.push(['Note', esc(o.crewStatusNote)]);
+      const head = planned ? 'Planned outage in progress on your street' : 'Power is out on your street';
+      return `<div class="live${planned ? ' planned' : ''}"><div class="live-head">${head}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
+    }).join('');
+  }
+
+  /** The matched outages' times, one line each; outages happening now are in the live box instead. */
   function upcomingList(matches, now) {
-    if (!matches.strong.length) return '';
-    const rows = matches.strong.map(({ o, match }) => {
+    const items = matches.strong.filter((i) => !isLive(i.o, now));
+    if (!items.length) return '';
+    const rows = items.map(({ o, match }) => {
       const tag = state.diff && state.diff.byId[o.id] ? ` <span class="badge new">${esc(state.diff.byId[o.id])}</span>` : '';
       const where = `<span class="muted">${esc(match.segment.label)}</span>`;
       if (o.kind === 'current') {
@@ -382,6 +415,7 @@
     const install = button ? `<span class="install">${button}</span>` : '';
     setHTML(els.home, `<div class="home-card">
   <div class="title-row"><div><h2 class="home-title">Outages</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
+  ${liveStatus(matches, now)}
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
   ${changes}
@@ -752,6 +786,13 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
     if (h < 36) return 'in ' + Math.round(h) + ' h';
     const d = Math.round(h / 24);
     return `in ${d} day${d === 1 ? '' : 's'}`;
+  }
+  function fmtAgo(ms) {
+    const h = ms / 3600e3;
+    if (h < 1) return Math.max(1, Math.round(ms / 60e3)) + ' min ago';
+    if (h < 36) return Math.round(h) + ' h ago';
+    const d = Math.round(h / 24);
+    return `${d} day${d === 1 ? '' : 's'} ago`;
   }
   function fmtNum(n) { return Number(n).toLocaleString('en-CA'); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
