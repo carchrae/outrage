@@ -32,19 +32,19 @@
 
   <main class="wrap">
     <form id="search-form" class="search" autocomplete="on">
-      <div class="field">
-        <label for="city">Municipality</label>
-        <input id="city" name="city" type="text" list="muni-list" placeholder="e.g. Bowen Island" autocomplete="address-level2" spellcheck="false">
-        <datalist id="muni-list"></datalist>
-      </div>
-      <div class="field">
-        <label for="street-address">Address</label>
-        <div class="search-row">
+      <div class="fields">
+        <div class="field address">
+          <label for="street-address">Address</label>
           <input id="street-address" name="street-address" type="text" placeholder="e.g. 742 Evergreen Terrace" autocomplete="street-address" spellcheck="false" enterkeyhint="done">
-          <button type="submit" class="btn primary" id="save">Save Address</button>
+        </div>
+        <div class="field municipality">
+          <label for="city">Municipality</label>
+          <input id="city" name="city" type="text" list="muni-list" placeholder="e.g. Bowen Island" autocomplete="address-level2" spellcheck="false">
+          <datalist id="muni-list"></datalist>
         </div>
       </div>
       <div class="search-options">
+        <button type="submit" class="btn primary" id="save">Save Address</button>
         <label class="check"><input type="checkbox" id="past"> Include finished outages</label>
         <button type="button" id="clear" class="btn link">Clear</button>
         <button type="button" id="locate" class="btn link" hidden>Use my location</button>

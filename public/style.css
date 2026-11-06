@@ -59,16 +59,13 @@ a { color: var(--accent); }
 
 .search { margin: 20px 0 10px; }
 .search[hidden] { display: none; }
-.search-row { display: flex; gap: 8px; }
-.search-row input[type="text"] {
-  flex: 1; min-width: 0; font: inherit; font-size: 1.1rem; padding: 12px 10px;
-  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text);
-}
-.search-row input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn { font: inherit; padding: 10px 16px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
 .btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 .btn.link { border: 0; background: none; color: var(--accent); padding: 6px 8px; text-decoration: underline; }
 .search-options { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-top: 10px; }
+.fields { display: flex; gap: 10px; align-items: flex-end; }
+.fields .field.address { flex: 1 1 auto; min-width: 0; }
+.fields .field.municipality { flex: 0 0 220px; }
 .field { margin-bottom: 10px; }
 .field > label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
 .field > input[type="text"] { width: 100%; font: inherit; font-size: 1.1rem; padding: 12px 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
@@ -122,8 +119,9 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .site-footer { padding: 10px 0 12px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); }
 .site-footer p { margin: 0; }
 @media (max-width: 520px) {
-  .search-row { flex-direction: column; }
-  .search-row .btn.primary { width: 100%; }
+  .fields { flex-direction: column; gap: 0; align-items: stretch; }
+  .fields .field.municipality { flex: 1 1 auto; }
+  .search-options .btn.primary { width: 100%; }
   .card .when .dur { display: block; font-size: 0.95rem; }
   .home-card .home-subtitle .muni { display: block; }
   .home-card .home-subtitle .muni .sep { display: none; }
