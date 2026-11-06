@@ -2,11 +2,11 @@
 
 Written 2026-11-02, implemented 2026-11-05. The design below was built as described, with these adjustments:
 
-- The page keeps localStorage as its store and mirrors the address and snapshot into IndexedDB for the
-  worker (`alerts.js`), rather than moving everything to IndexedDB. Nothing in `app.js` became async.
-- The worker does not update the snapshot after a push. The page still computes "changes since your last
-  visit" from the snapshot on the next open, so the notification and the page agree; a second push before a
-  visit repeats the earlier changes along with the new ones.
+- The worker no longer fetches or matches anything (2026-11-06): the push carries its own title and text,
+  built on the server from the changed outages at street level, and the worker just shows it. The first
+  version fetched the feeds in the worker and matched the full address from an IndexedDB mirror; it worked
+  in Chrome but failed silently in Firefox, and a notification that cannot fail is worth more than a house
+  number in it. The page still computes exact "changes since your last visit" when opened.
 - Matching and diffing moved from `app.js` into `public/matcher.js`, shared by the page, the worker and tests.
 - Finished planned outages are not pushed on their own; the server pushes on any feed change to a listed
   street and the worker reports whatever the diff shows, which includes a finished outage only alongside

@@ -56,8 +56,6 @@ when alerts are turned on, the street name and municipality (see "Push alerts").
 | `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
 | `outage-finder.alerts` | street, municipality and push endpoint registered for alerts |
 
-The address and snapshot are also mirrored into IndexedDB (database `outage`, store `kv`) because
-the service worker cannot read localStorage.
 
 The "since your last visit" baseline is pinned in sessionStorage so a reload does not clear the
 notice. Changing or clearing the address resets the snapshot and history. The page always opens on
@@ -98,9 +96,11 @@ the push subscription. The house number, unit, snapshot and history never leave 
   records which streets it covers, so a street subscribed since the last run gets its baseline
   first and no spurious "new outage" alert. A 404 or 410 from the push service, or three failures
   in a row, deletes the record.
-- `public/sw.js` handles the push: it fetches the feeds through `/api`, matches the saved address
-  with the same `matcher.js` the page uses, diffs against the last snapshot and shows one
-  notification describing the changes. Clicking it opens the site, which shows the same changes.
+- The push carries the notification itself: a title such as "Adams Rd, Bowen Island" and one
+  plain line per change ("Power out: unplanned outage, crew assigned, 73 customers", "Time
+  changed: planned outage now Sat, Nov 7 8:00 a.m. – 4:00 p.m."). It is street level, since the
+  server never knows a house number. `public/sw.js` just shows it; clicking opens the site, which
+  works out the exact changes for the saved address.
 - Subscriptions are re-sent on every visit when the street changed or the record is a week old, and
   removed when the address is cleared.
 - The worker also caches the page, its assets and the last copy of each feed (network first), so the

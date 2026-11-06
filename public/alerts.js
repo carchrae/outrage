@@ -1,46 +1,16 @@
 /*
  * Push alerts for the saved address.
  *
- * The page keeps the address, snapshot and history in localStorage; this module mirrors the two
- * the service worker needs (address and snapshot) into IndexedDB, which workers can read, and
- * manages the push subscription. The server only ever receives the normalised street name and
- * municipality, never the house number.
+ * Manages the push subscription. The server only ever receives the normalised street name and
+ * municipality, never the house number; the notification text it pushes is street-level.
  */
 (function () {
   'use strict';
   const P = window.OutageParser;
   const FLAG_KEY = 'outage-finder.alerts';
-  const DB_NAME = 'outage';
-  const STORE = 'kv';
   const RESYNC_MS = 7 * 24 * 3600 * 1000;
   const metaKey = document.querySelector('meta[name="vapid-public-key"]');
   const publicKey = (window.VAPID_PUBLIC_KEY || (metaKey && metaKey.content) || '').trim();
-
-  // ---------------------------------------------------------------- IndexedDB mirror
-
-  function openDB() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-
-  /** Write (or delete, when value is null) a key the service worker will read. Failures are ignored. */
-  async function mirror(key, value) {
-    if (!('indexedDB' in window)) return;
-    try {
-      const db = await openDB();
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE, 'readwrite');
-        if (value == null) tx.objectStore(STORE).delete(key); else tx.objectStore(STORE).put(value, key);
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
-      });
-      db.close();
-    } catch (e) { /* storage unavailable */ }
-  }
 
   // ---------------------------------------------------------------- state
 
@@ -148,5 +118,5 @@
     } catch (e) { /* offline or server unavailable; try again next visit */ }
   }
 
-  window.OutageAlerts = { supported, status, needsInstall, isIOS, standalone, enable, disable, sync, mirror, register };
+  window.OutageAlerts = { supported, status, needsInstall, isIOS, standalone, enable, disable, sync, register };
 })();

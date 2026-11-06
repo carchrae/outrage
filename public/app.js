@@ -40,8 +40,6 @@
   function readJSON(store, key) { try { return JSON.parse(store.getItem(key) || 'null'); } catch (e) { return null; } }
   function writeJSON(store, key, val) {
     try { if (val == null) store.removeItem(key); else store.setItem(key, JSON.stringify(val)); } catch (e) { /* storage unavailable */ }
-    // The service worker cannot read localStorage, so the address and snapshot are mirrored where it can.
-    if (A && store === localStorage && (key === HOME_KEY || key === SNAP_KEY)) A.mirror(key === HOME_KEY ? 'home' : 'snapshot', val);
   }
 
   // ------------------------------------------------------------ data
@@ -62,7 +60,7 @@
       document.documentElement.removeAttribute('data-boot');
       if (A) A.register().catch(() => {});
       if (A && state.home && !state.error) {
-        A.mirror('home', state.home); A.sync(state.home, state.munis);
+        A.sync(state.home, state.munis);
         if (A.standalone()) maybeOfferAlerts(`Turn on alerts for ${homeLabel()} so this app can tell you when something changes.`);
       }
     }

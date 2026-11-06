@@ -1,15 +1,15 @@
 /*
  * Scheduled function, every 10 minutes: fetch both BC Hydro feeds, diff them against the copy kept from
  * the previous run, and push to the subscribers whose street is listed by an outage that was
- * added, changed or removed. The push payload only carries outage ids; the service worker on
- * the device does the real matching against the saved address.
+ * added, changed or removed. The push carries the notification text itself (street level only,
+ * the server never knows a house number), so the worker just shows it.
  *
  * Needs VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT (a mailto: or https: URL) in the
  * site's environment. Generate a key pair with `npm run vapid`.
  */
 import { getStore } from '@netlify/blobs';
 import webpush from 'web-push';
-import { slimFeed, collectMunis, diffFeeds, pickSubscribers, pruneToSubscribers } from './lib/feed-diff.mjs';
+import { slimFeed, collectMunis, diffFeeds, pickSubscribers, pruneToSubscribers, notificationFor } from './lib/feed-diff.mjs';
 
 export const config = { schedule: '*/10 * * * *' };
 
@@ -62,8 +62,10 @@ export async function run({ store, send, log = console.log, now = Date.now() }) 
   log(`${changed.length} changed outages, ${subs.length} subscribers, ${hits.size} to notify`);
 
   let pushed = 0, dropped = 0;
-  await mapLimit([...hits.values()], CONCURRENCY, async ({ sub, ids, kinds }) => {
-    const payload = JSON.stringify({ ids: ids.slice(0, 50), kinds: [...kinds], at: now });
+  await mapLimit([...hits.values()], CONCURRENCY, async (hit) => {
+    const { sub, ids, kinds } = hit;
+    const { title, body } = notificationFor(hit);
+    const payload = JSON.stringify({ title, body, url: '/', ids: ids.slice(0, 50), kinds: [...kinds], at: now });
     try {
       await send({ endpoint: sub.endpoint, keys: sub.keys }, payload);
       pushed++;

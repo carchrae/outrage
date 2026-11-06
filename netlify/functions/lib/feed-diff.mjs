@@ -10,7 +10,10 @@ export function slimFeed(data, kind) {
   const out = [];
   for (const r of (data && data.regions) || []) {
     for (const o of r.outages || []) {
-      out.push({ id: o.id, kind, municipality: o.municipality || '', area: o.area || '', dateOff: o.dateOff, dateOn: o.dateOn, lastUpdated: o.lastUpdated });
+      const rec = { id: o.id, kind, municipality: o.municipality || '', area: o.area || '', dateOff: o.dateOff, dateOn: o.dateOn, lastUpdated: o.lastUpdated };
+      if (kind === 'current') { rec.crew = o.crewStatusDescr || ''; rec.customers = o.numCustomersOut; rec.cause = o.cause || ''; }
+      else if (/cancel/i.test(o.area)) rec.cancelled = true;
+      out.push(rec);
     }
   }
   return out;
@@ -28,7 +31,7 @@ export function collectMunis(...feeds) {
 }
 
 function same(a, b) {
-  return a.dateOff === b.dateOff && a.dateOn === b.dateOn && a.area === b.area && a.lastUpdated === b.lastUpdated;
+  return a.dateOff === b.dateOff && a.dateOn === b.dateOn && a.area === b.area && a.lastUpdated === b.lastUpdated && a.crew === b.crew;
 }
 
 /**
@@ -43,7 +46,7 @@ export function diffFeeds(prev, next) {
   for (const [k, o] of nextBy) {
     const p = prevBy.get(k);
     if (!p) out.push({ ...o, change: 'added' });
-    else if (!same(p, o)) out.push({ ...o, change: 'changed' });
+    else if (!same(p, o)) out.push({ ...o, change: 'changed', was: { dateOff: p.dateOff, dateOn: p.dateOn, crew: p.crew, cancelled: p.cancelled } });
   }
   for (const [k, p] of prevBy) if (!nextBy.has(k)) out.push({ ...p, change: 'removed' });
   return out;
@@ -52,7 +55,7 @@ export function diffFeeds(prev, next) {
 /** Street keys an outage lists: [{ key, core, locality }], plus its municipality, all lower case. */
 export function streetsOf(o, munis) {
   const parsed = P.parseArea(o.area, munis);
-  return parsed.segments.filter((s) => s.key && !s.boundary).map((s) => ({ key: s.key, core: s.core, locality: (s.locality || '').toLowerCase() }));
+  return parsed.segments.filter((s) => s.key && !s.boundary).map((s) => ({ key: s.key, core: s.core, street: s.street, locality: (s.locality || '').toLowerCase() }));
 }
 
 /**
@@ -109,11 +112,54 @@ export function pickSubscribers(subs, changed, munis, knownCores) {
     for (const street of streetsOf(o, munis)) {
       for (const sub of byCore.get(street.core) || []) {
         if (!muniMatches(sub.muni, o, street)) continue;
-        if (!hits.has(sub.id)) hits.set(sub.id, { sub, ids: [], kinds: new Set() });
+        if (!hits.has(sub.id)) hits.set(sub.id, { sub, ids: [], kinds: new Set(), outages: [], street: street.street });
         const h = hits.get(sub.id);
-        if (!h.ids.includes(o.id)) { h.ids.push(o.id); h.kinds.add(o.kind); }
+        if (!h.ids.includes(o.id)) { h.ids.push(o.id); h.kinds.add(o.kind); h.outages.push(o); }
       }
     }
   }
   return hits;
+}
+
+// ---------------------------------------------------------------- notification text
+
+const TZ = 'America/Vancouver';
+const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' });
+const timeFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+const fmtTime = (ms) => (Number.isFinite(ms) ? timeFmt.format(new Date(ms)).replace(/\./g, '').replace(/\s?([ap])m/i, ' $1.m.') : '?');
+const fmtDateTime = (ms) => (Number.isFinite(ms) ? `${dayFmt.format(new Date(ms))} ${fmtTime(ms)}` : 'unknown time');
+function fmtWindow(off, on) {
+  if (!Number.isFinite(on)) return fmtDateTime(off);
+  const sameDay = dayFmt.format(new Date(off)) === dayFmt.format(new Date(on));
+  return sameDay ? `${dayFmt.format(new Date(off))} ${fmtTime(off)} – ${fmtTime(on)}` : `${fmtDateTime(off)} – ${fmtDateTime(on)}`;
+}
+const titleCase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+
+/** One short line per changed outage, in plain words. Street-level only: the server never knows the house number. */
+export function describeChange(o) {
+  const w = o.was || {};
+  if (o.kind === 'current') {
+    const crew = o.crew ? `, ${o.crew.toLowerCase()}` : '';
+    const n = o.customers != null ? `, ${o.customers} customer${o.customers === 1 ? '' : 's'}` : '';
+    if (o.change === 'removed') return 'Unplanned outage resolved';
+    if (o.change === 'added') return `Power out: unplanned outage${crew}${n}`;
+    if (o.dateOn && o.dateOn !== w.dateOn) return `Unplanned outage: power expected back ${fmtDateTime(o.dateOn)}${crew}`;
+    if (o.crew && o.crew !== w.crew) return `Unplanned outage: ${o.crew.toLowerCase()}${o.dateOn ? ', power expected back ' + fmtDateTime(o.dateOn) : ''}`;
+    return `Unplanned outage updated${crew}${n}`;
+  }
+  const when = fmtWindow(o.dateOff, o.dateOn);
+  if (o.change === 'removed') return `No longer listed: planned outage ${when}`;
+  if (o.change === 'added') return `New planned outage: ${when}`;
+  if (o.cancelled && !w.cancelled) return `Cancelled: planned outage ${when}`;
+  if (o.dateOff !== w.dateOff || o.dateOn !== w.dateOn) return `Time changed: planned outage now ${when}`;
+  return `Planned outage updated: ${when}`;
+}
+
+/** Title and body for one subscriber's push: the street and municipality, then up to four lines. */
+export function notificationFor(hit) {
+  const street = titleCase(hit.street || hit.sub.street);
+  const muni = hit.outages[0] && hit.outages[0].municipality ? hit.outages[0].municipality : titleCase(hit.sub.muni);
+  const lines = hit.outages.map(describeChange);
+  const body = lines.slice(0, 4).join('\n') + (lines.length > 4 ? `\n+${lines.length - 4} more` : '');
+  return { title: muni ? `${street}, ${muni}` : street, body };
 }

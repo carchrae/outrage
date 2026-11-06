@@ -85,6 +85,8 @@ test('check-feeds run(): stores the first copy, then pushes only to touched stre
     const r = await C.run({ store, send, log });
     assert.deepEqual([r.changed, r.pushed, r.dropped], [1, 1, 1]);
     assert.deepEqual(sent.map(([e, p]) => [e, p.ids]), [['https://p/a', [1]]]);
+    assert.equal(sent[0][1].title, 'Adams Rd, Bowen Island');
+    assert.match(sent[0][1].body, /^Time changed: planned outage now /);
     assert.ok(!blobs.has('sub/gone'), 'dead endpoint deleted');
     assert.ok(blobs.has('sub/elm'), 'untouched subscriber kept');
   } finally { global.fetch = realFetch; }
@@ -104,4 +106,23 @@ test('geocode: parseNearest builds an address line from the BC Geocoder response
   assert.equal(r.address, '1 Adams Rd');
   assert.ok(calls[0][0].includes('point=-123.37%2C49.37'), 'longitude first');
   assert.equal(calls[0][1], 'KEY');
+});
+
+test('notification text: one plain line per change, street level only', async () => {
+  const L = await import('../netlify/functions/lib/feed-diff.mjs');
+  const planned = (change, extra) => ({ kind: 'planned', change, dateOff: Date.UTC(2026, 10, 7, 16), dateOn: Date.UTC(2026, 10, 8, 0), ...extra });
+  assert.equal(L.describeChange(planned('added')), 'New planned outage: Sat, Nov 7 8:00 a.m. – 4:00 p.m.');
+  assert.equal(L.describeChange(planned('removed')), 'No longer listed: planned outage Sat, Nov 7 8:00 a.m. – 4:00 p.m.');
+  assert.equal(L.describeChange(planned('changed', { was: { dateOff: 1, dateOn: 2 } })), 'Time changed: planned outage now Sat, Nov 7 8:00 a.m. – 4:00 p.m.');
+  assert.equal(L.describeChange(planned('changed', { cancelled: true, was: { dateOff: Date.UTC(2026, 10, 7, 16), dateOn: Date.UTC(2026, 10, 8, 0) } })), 'Cancelled: planned outage Sat, Nov 7 8:00 a.m. – 4:00 p.m.');
+  const current = (change, extra) => ({ kind: 'current', change, dateOff: Date.UTC(2026, 10, 6, 14, 20), dateOn: null, crew: 'Crew assigned', customers: 73, ...extra });
+  assert.equal(L.describeChange(current('added')), 'Power out: unplanned outage, crew assigned, 73 customers');
+  assert.equal(L.describeChange(current('changed', { crew: 'Crew on-site', was: { crew: 'Crew assigned' } })), 'Unplanned outage: crew on-site');
+  assert.equal(L.describeChange(current('changed', { dateOn: Date.UTC(2026, 10, 6, 23), was: { crew: 'Crew assigned' } })), 'Unplanned outage: power expected back Fri, Nov 6 3:00 p.m., crew assigned');
+  assert.equal(L.describeChange(current('removed')), 'Unplanned outage resolved');
+  const n = L.notificationFor({ sub: { street: 'adams rd', muni: 'bowen island' }, street: 'ADAMS RD', outages: [current('added', { municipality: 'Bowen Island' }), planned('added'), planned('removed'), planned('added'), planned('added')] });
+  assert.equal(n.title, 'Adams Rd, Bowen Island');
+  assert.equal(n.body.split('\n').length, 5);
+  assert.match(n.body, /\+1 more$/);
+  assert.ok(!/1261|house/.test(n.body));
 });
