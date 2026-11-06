@@ -2,3 +2,5 @@ node_modules/
 tmp/
 .netlify/
 .DS_Store
+.env
+.env.*

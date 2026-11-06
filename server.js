@@ -9,6 +9,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
+// Local secrets live in .env (gitignored): VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT.
+try { process.loadEnvFile(path.join(__dirname, '.env')); } catch (e) { /* no .env, or an older Node */ }
+
 const PORT = Number(process.env.PORT) || 3000;
 let vapidPublicKey = (process.env.VAPID_PUBLIC_KEY || '').trim();
 if (!vapidPublicKey) {
