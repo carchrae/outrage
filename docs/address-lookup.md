@@ -14,7 +14,7 @@ key is configured. This is what is in place and what remains.
   locality }`. The page fills the Address field (and the municipality from the geocoder's locality
   when the feeds know it), shows "Nearest address from the BC Address Geocoder. Check it, then
   press Save Address.", and focuses the field. Nothing is saved until the visitor presses Save.
-- Without a key the build leaves `<meta name="geocoder">` empty, the page skips step 2 entirely,
+- Without a key the build leaves `<meta name="geocoder">` empty, the button is not shown at all,
   and the function answers 501 if anything calls it.
 
 ## What is wired

@@ -949,7 +949,8 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
   els.muni.addEventListener('input', onMuni);
   els.muni.addEventListener('change', onMuni);
   els.past.addEventListener('change', () => { state.past = els.past.checked; writeState(); render(); });
-  if ('geolocation' in navigator) els.locate.hidden = false;
+  // Offered only when the deploy can turn a location into an address; the municipality guess alone is not worth a button.
+  if ('geolocation' in navigator && HAS_GEOCODER) els.locate.hidden = false;
   els.locate.addEventListener('click', () => locate());
   els.clear.addEventListener('click', () => { state.query = ''; state.muni = DEFAULT_MUNI; els.q.value = ''; els.muni.value = state.muni; writeState(); render(); els.q.focus(); });
   els.results.addEventListener('click', (e) => {

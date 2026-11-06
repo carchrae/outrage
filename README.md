@@ -35,7 +35,7 @@ The site itself is plain HTML, CSS and JavaScript in `public/` with no build ste
 ## Use my location
 
 Location is only ever read when the visitor presses "Use my location" under the form; the page never
-asks on its own. The nearest municipality is picked from `public/munis.json` (centroids for every
+asks on its own, and the button is only shown when the deploy has a geocoder key. The nearest municipality is picked from `public/munis.json` (centroids for every
 name the feeds use, built by `npm run geocode` from OpenStreetMap's Nominatim; nothing is looked up
 at runtime for that step). When the deploy has a `BC_GEOCODER_KEY` (a free key from the BC
 government's API Services Portal, https://api.gov.bc.ca/devportal/api-directory, "Address
