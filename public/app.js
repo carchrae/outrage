@@ -536,8 +536,7 @@
     const ua = navigator.userAgent;
     const ios = !!(A && A.isIOS());
     const android = /android/i.test(ua);
-    const browser = ios ? 'Safari' : /samsungbrowser/i.test(ua) ? 'Samsung Internet' : /firefox/i.test(ua) ? 'Firefox' : /edg\//i.test(ua) ? 'Edge' : 'Chrome';
-    return { ios, android, phone: ios || android, browser, standalone: !!(A && A.standalone()) };
+    return { ios, android, phone: ios || android, standalone: !!(A && A.standalone()) };
   }
 
   const ALERT_FACTS = {
@@ -552,8 +551,8 @@
   function alertFacts(d) {
     const facts = [ALERT_FACTS.hourly, ALERT_FACTS.what, ALERT_FACTS.street];
     if (d.ios) facts.push('If you do not open the app for a few weeks, iPhone may stop the alerts. Opening it again turns them back on.');
-    else if (d.android) facts.push(`Alerts come through ${d.browser} and need notifications allowed. Battery saver settings can delay them by a few hours.`);
-    else facts.push(`Alerts come through ${d.browser} and need notifications allowed for this site.`);
+    else if (d.android) facts.push('Your browser needs permission to show notifications. Battery saver settings can delay alerts by a few hours.');
+    else facts.push('Your browser needs permission to show notifications for this site.');
     facts.push(ALERT_FACTS.privacy, ALERT_FACTS.unofficial);
     return facts;
   }
