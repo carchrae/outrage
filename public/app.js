@@ -414,7 +414,7 @@
     const button = titleButton();
     const install = button ? `<span class="install">${button}</span>` : '';
     setHTML(els.home, `<div class="home-card">
-  <div class="title-row"><div><h2 class="home-title">Outages</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
+  <div class="title-row"><div><h2 class="home-title">Outage at</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
   ${liveStatus(matches, now)}
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
