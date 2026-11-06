@@ -125,6 +125,8 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
   .search-row { flex-direction: column; }
   .search-row .btn.primary { width: 100%; }
   .card .when .dur { display: block; font-size: 0.95rem; }
+  .home-card .home-subtitle .muni { display: block; }
+  .home-card .home-subtitle .muni .sep { display: none; }
 }
 .nearby { margin: 14px 0 0; font-size: 0.92rem; }
 .nearby-head { font-weight: 600; color: var(--danger); margin-bottom: 4px; }

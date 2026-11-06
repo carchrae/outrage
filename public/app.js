@@ -455,7 +455,7 @@
       }
       return;
     }
-    const addr = `<span class="addr">${esc(state.home.address)}${state.home.muni ? ` <span class="muni">· ${esc(state.home.muni)}</span>` : ''}</span>`;
+    const addr = `<span class="addr">${esc(state.home.address)}${state.home.muni ? ` <span class="muni"><span class="sep">· </span>${esc(state.home.muni)}</span>` : ''}</span>`;
     const savedBar = `<p class="home-actions"><span class="muted">Saved address:</span> ${addr} <a href="#" id="home-show">Show</a> <a href="#" id="home-forget">Clear my address and history</a></p>`;
     if (!queryIsHome()) {
       if (!state.query || !queryIsAddress()) { setHTML(els.home, `<div class="home-card compact">${savedBar}</div>`); return; }
