@@ -376,7 +376,7 @@
     const more = `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>`;
     const install = installable() ? `<span class="install">${installButton()}</span>` : '';
     setHTML(els.home, `<div class="home-card">
-  <div class="title-row"><h2 class="home-title">Outages for ${addr}</h2>${install}</div>
+  <div class="title-row"><div><h2 class="home-title">Outages</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
   ${changes}

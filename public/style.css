@@ -128,9 +128,9 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .btn.small { padding: 5px 10px; font-size: 0.9rem; }
 .home-card { background: var(--surface); border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 12px; }
 .home-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
-.home-card .home-title { font-weight: 500; color: var(--muted); }
-.home-card .home-title .addr { color: var(--text); }
-.home-card .addr { font-size: 1.15rem; font-weight: 650; }
+.home-card .home-title { margin: 0; font-size: 1.25rem; font-weight: 700; }
+.home-card .home-subtitle { margin: 2px 0 8px; }
+.home-card .addr { font-size: 1.05rem; font-weight: 500; }
 .home-card .addr .muni { color: var(--muted); font-weight: 400; }
 .home-form { display: grid; gap: 8px; }
 .home-form input { font: inherit; font-size: 1.05rem; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); width: 100%; }
@@ -179,7 +179,8 @@ html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-b
 
 .title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .title-row > h1, .title-row > h2 { min-width: 0; }
-.install { flex: none; padding-top: 4px; }
+.install { flex: none; padding-top: 2px; }
+.install .btn { font-size: 1rem; padding: 8px 16px; }
 .install[hidden] { display: none; }
 .dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); padding: 18px; width: min(440px, calc(100% - 32px)); box-sizing: border-box; font-size: 0.95rem; line-height: 1.45; }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
