@@ -148,5 +148,5 @@
     } catch (e) { /* offline or server unavailable; try again next visit */ }
   }
 
-  window.OutageAlerts = { supported, status, needsInstall, enable, disable, sync, mirror };
+  window.OutageAlerts = { supported, status, needsInstall, isIOS, standalone, enable, disable, sync, mirror };
 })();

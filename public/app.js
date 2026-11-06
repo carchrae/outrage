@@ -57,7 +57,10 @@
       state.loading = false;
       render();
       document.documentElement.removeAttribute('data-boot');
-      if (A && state.home && !state.error) { A.mirror('home', state.home); A.sync(state.home, state.munis); }
+      if (A && state.home && !state.error) {
+        A.mirror('home', state.home); A.sync(state.home, state.munis);
+        if (A.standalone()) maybeOfferAlerts(`Turn on alerts for ${homeLabel()} so this app can tell you when something changes.`);
+      }
     }
   }
 
@@ -374,7 +377,8 @@
     }
 
     const more = `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>`;
-    const install = installable() ? `<span class="install">${installButton()}</span>` : '';
+    const button = titleButton();
+    const install = button ? `<span class="install">${button}</span>` : '';
     setHTML(els.home, `<div class="home-card">
   <div class="title-row"><div><h2 class="home-title">Outages</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
   <p class="home-summary">${summary}</p>
@@ -390,13 +394,16 @@
   function alertsControl() {
     if (!A || !A.supported()) return '';
     const st = A.status();
-    let html;
-    if (st === 'blocked') html = `<span class="muted">Alerts are blocked for this site in your browser's notification settings.</span>`;
-    else if (st === 'on') html = `<span class="alerts-on">Alerts on</span> <span class="muted">·</span> <a href="#" id="home-alerts-off">Turn off</a>`;
-    else if (A.needsInstall()) html = `<span class="muted">For alerts on iPhone or iPad, add this page to your Home Screen (Share, then Add to Home Screen) and open it from there.</span>`;
-    else if (state.alertsBusy) html = `<span class="muted">Turning on alerts…</span>`;
-    else html = `<a href="#" id="home-alerts-on">Get alerts when this changes</a>`;
+    let html = '';
+    if (state.alertsBusy) html = `<span class="muted">Turning on alerts…</span>`;
+    else if (!bellShown()) {
+      if (st === 'blocked') html = `<span class="muted">Alerts are blocked for this site in your browser's notification settings.</span>`;
+      else if (st === 'on') html = `<span class="alerts-on">Alerts on</span> <span class="muted">·</span> <a href="#" id="home-alerts-off">Turn off</a>`;
+      else if (A.needsInstall()) html = `<span class="muted">For alerts on iPhone or iPad, press Install above and follow the steps.</span>`;
+      else html = `<a href="#" id="home-alerts-on">Get alerts when this changes</a>`;
+    }
     const msg = state.alertsMsg ? ` <span class="alerts-msg">${esc(state.alertsMsg)}</span>` : '';
+    if (!html && !msg) return '';
     return `<p class="home-alerts">${html}${msg}</p>`;
   }
 
@@ -449,8 +456,38 @@
     const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
     const ios = A && A.needsInstall();
     if (!standalone && (state.installPrompt || ios)) html = installButton();
-    setHTML(els.install, html);
-    if (els.install.hidden !== !html) els.install.hidden = !html;
+    setHTML(els.install, titleButton());
+    if (els.install.hidden !== !els.install.innerHTML) els.install.hidden = !els.install.innerHTML;
+  }
+
+  const BELL_ON = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>';
+  const BELL_OFF = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.6 3.3A6 6 0 0 1 18 8c0 3.5.8 5.6 1.6 7M6.3 6.3C6.1 6.8 6 7.4 6 8c0 7-3 9-3 9h14"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/><line x1="2" y1="2" x2="22" y2="22"/></svg>';
+
+  /** Does this page show the alerts bell (rather than Install, or nothing) in its title row? */
+  function bellShown() {
+    const d = device();
+    if (d.phone && !d.standalone && installable()) return false;
+    return !!(A && A.supported() && state.home);
+  }
+
+  /** The button at the top right of the title: Install on a phone that has not installed the site, else the alerts bell. */
+  function titleButton() {
+    const d = device();
+    if (d.phone && !d.standalone && installable()) return installButton();
+    if (!bellShown()) return '';
+    const st = A.status();
+    const on = st === 'on';
+    const label = on ? 'Alerts on' : st === 'blocked' ? 'Alerts blocked' : 'Alerts off';
+    return `<button type="button" class="btn small bell${on ? ' on' : ''}" id="alerts-toggle" aria-pressed="${on}" title="${on ? 'Turn alerts off' : 'Turn alerts on'}">${on ? BELL_ON : BELL_OFF}<span>${label}</span></button>`;
+  }
+
+  /** The bell was pressed: turn alerts off, or open the dialog that turns them on. */
+  function toggleAlerts() {
+    const st = A.status();
+    state.alertsMsg = '';
+    if (st === 'on') { A.disable().then(() => render()); render(); }
+    else if (st === 'blocked') { state.alertsMsg = 'Notifications are blocked for this site in your browser settings. Allow them there, then try again.'; render(); }
+    else alertsDialog();
   }
 
   function installable() {
@@ -459,36 +496,77 @@
   }
   function installButton() { return `<button type="button" class="btn small primary" id="install-ask">Install</button>`; }
 
-  /** The plain-words limitations shown before installing. */
-  function installDialog() {
-    const ios = A && A.needsInstall();
+  /** What this device is, so dialogs only say what applies to it. */
+  function device() {
     const ua = navigator.userAgent;
+    const ios = !!(A && A.isIOS());
     const android = /android/i.test(ua);
-    const limits = [
-      'This is a shortcut to this website, not an app from the app store. It opens full screen and can show alerts.',
-      'It only knows what BC Hydro publishes. If BC Hydro leaves your street off the list, there is no alert.',
-    ];
-    if (ios) limits.push('On iPhone and iPad, alerts only work when you open the page from the home screen icon, not from Safari.', 'If you do not open it for a few weeks, iPhone may stop the alerts. Opening it again turns them back on.');
-    else if (android) limits.push('Alerts come through ' + (/samsungbrowser/i.test(ua) ? 'Samsung Internet' : /firefox/i.test(ua) ? 'Firefox' : 'Chrome') + ', so that browser must stay installed and allowed to show notifications.', 'Battery saver settings can delay alerts by a few hours.');
-    else limits.push('Alerts come through this browser, so it must stay installed and allowed to show notifications.');
-    const steps = ios ? `<p><b>How:</b> tap the Share button, choose <b>Add to Home Screen</b>, then open Planned outrage from the new icon and turn alerts on there.</p>` : '';
-    const actions = ios
-      ? `<button type="button" class="btn small primary" id="dialog-close">Got it</button>`
-      : `<button type="button" class="btn link small" id="dialog-close">Not now</button> <button type="button" class="btn small primary" id="install-go">Install</button>`;
-    openDialog(`<h3>Install</h3><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${steps}<div class="actions">${actions}</div>`);
+    const browser = ios ? 'Safari' : /samsungbrowser/i.test(ua) ? 'Samsung Internet' : /firefox/i.test(ua) ? 'Firefox' : /edg\//i.test(ua) ? 'Edge' : 'Chrome';
+    return { ios, android, phone: ios || android, browser, standalone: !!(A && A.standalone()) };
   }
 
-  /** The plain-words limitations shown before turning alerts on. */
-  function alertsDialog() {
-    const limits = [
-      'We check BC Hydro once an hour, so an alert can be up to an hour behind their website.',
-      'You get an alert when an outage that lists your street is added, changed, cancelled or removed.',
-      'BC Hydro sometimes lists a whole street, so an alert does not always mean your house is affected. Open the page to see the details.',
-      'Your street name and town are kept on our server so we know what to send you. Your house number stays on this device.',
-      'Alerts need notifications allowed for this site in your browser.' + (/android/i.test(navigator.userAgent) ? ' Battery saver settings can delay them.' : ''),
-      'This is not BC Hydro. For anything important, check bchydro.com too.',
-    ];
-    openDialog(`<h3>Get outage alerts</h3><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul><div class="actions"><button type="button" class="btn link small" id="dialog-close">Cancel</button> <button type="button" class="btn small primary" id="home-alerts-go">Turn on alerts</button></div>`);
+  const ALERT_FACTS = {
+    hourly: 'We check BC Hydro once an hour, so an alert can be up to an hour behind their website.',
+    what: 'You get an alert when an outage listing your street is added, changed, cancelled or removed.',
+    street: 'BC Hydro sometimes lists a whole street, so an alert does not always mean your house is affected. Open the page to see the details.',
+    privacy: 'Your street name and town are kept on our server so we know what to send you. Your house number stays on this device.',
+    unofficial: 'This is not BC Hydro. For anything important, check bchydro.com too.',
+  };
+
+  /** Alert limitations for this device only. */
+  function alertFacts(d) {
+    const facts = [ALERT_FACTS.hourly, ALERT_FACTS.what, ALERT_FACTS.street];
+    if (d.ios) facts.push('If you do not open the app for a few weeks, iPhone may stop the alerts. Opening it again turns them back on.');
+    else if (d.android) facts.push(`Alerts come through ${d.browser} and need notifications allowed. Battery saver settings can delay them by a few hours.`);
+    else facts.push(`Alerts come through ${d.browser} and need notifications allowed for this site.`);
+    facts.push(ALERT_FACTS.privacy, ALERT_FACTS.unofficial);
+    return facts;
+  }
+
+  function list(items) { return `<ul>${items.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`; }
+  function homeLabel() { return state.home ? esc(state.home.address) : ''; }
+
+  /** Install, and turn on alerts in the same go. Says only what applies to this device. */
+  function installDialog() {
+    const d = device();
+    if (d.ios) {
+      const facts = [
+        'This adds Planned outrage to your home screen as a shortcut to this website. It opens full screen like an app.',
+        'On iPhone and iPad, alerts only work from the home screen copy, not from Safari. The first time you open it from the icon it will offer to turn alerts on.',
+      ].concat(alertFacts(d));
+      openDialog(`<h3>Install on ${/ipad/i.test(navigator.userAgent) ? 'iPad' : 'iPhone'}</h3>
+<p><b>How:</b> tap the Share button <span aria-hidden="true">(the square with an arrow)</span>, choose <b>Add to Home Screen</b>, then open Planned outrage from the new icon.</p>
+${list(facts)}<div class="actions"><button type="button" class="btn small primary" id="dialog-close">Got it</button></div>`);
+      return;
+    }
+    const withAlerts = !!state.home && A && A.supported() && A.status() !== 'on';
+    const intro = withAlerts
+      ? `This adds Planned outrage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website, and turns on alerts for ${homeLabel()}.`
+      : `This adds Planned outrage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website.${state.home ? '' : ' Save your address afterwards to get alerts.'}`;
+    openDialog(`<h3>${withAlerts ? 'Install and get alerts' : 'Install'}</h3><p>${intro}</p>${list(alertFacts(d))}
+<div class="actions"><button type="button" class="btn link small" id="dialog-close">Not now</button> <button type="button" class="btn small primary" id="install-go">Install</button></div>`);
+  }
+
+  /** The alert limitations for this device, before turning alerts on. */
+  function alertsDialog(intro) {
+    const d = device();
+    openDialog(`<h3>Get outage alerts</h3>${intro ? `<p>${intro}</p>` : ''}${list(alertFacts(d))}<div class="actions"><button type="button" class="btn link small" id="dialog-close">Cancel</button> <button type="button" class="btn small primary" id="home-alerts-go">Turn on alerts</button></div>`);
+  }
+
+  const ASKED_KEY = 'outage-finder.alerts-offered';
+  /**
+   * Offer alerts once, without nagging: right after an install is accepted, and on the first open of the
+   * installed app (that is the only way an iPhone can get them). The button in the dialog supplies the
+   * user gesture the permission prompt needs.
+   */
+  function maybeOfferAlerts(intro) {
+    if (!A || !A.supported() || !state.home || A.status() !== 'off') return false;
+    let asked = false;
+    try { asked = !!localStorage.getItem(ASKED_KEY); } catch (e) { /* ignore */ }
+    if (asked) return false;
+    try { localStorage.setItem(ASKED_KEY, '1'); } catch (e) { /* ignore */ }
+    alertsDialog(intro);
+    return true;
   }
 
   function openDialog(html) {
@@ -744,8 +822,10 @@
     }
   });
   els.home.addEventListener('click', (e) => {
-    const id = e.target.id;
+    const b = e.target.closest('button');
+    const id = b ? b.id : e.target.id;
     if (id === 'install-ask') installDialog();
+    else if (id === 'alerts-toggle') toggleAlerts();
     else if (id === 'home-forget') {
       e.preventDefault();
       if (window.confirm(`Clear your saved address (${state.home.address}) and its outage history from this browser?`)) forgetHome();
@@ -771,7 +851,12 @@
   window.addEventListener('popstate', () => { readState(); render(); });
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; render(); });
   window.addEventListener('appinstalled', () => { state.installPrompt = null; render(); });
-  els.install.addEventListener('click', (e) => { if (e.target.id === 'install-ask') installDialog(); });
+  els.install.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.id === 'install-ask') installDialog();
+    else if (b.id === 'alerts-toggle') toggleAlerts();
+  });
   els.dialog.addEventListener('click', async (e) => {
     const id = e.target.id;
     if (id === 'dialog-close') closeDialog();
@@ -780,8 +865,10 @@
       const p = state.installPrompt;
       if (!p) return;
       state.installPrompt = null; render();
-      try { p.prompt(); await p.userChoice; } catch (err) { /* dismissed */ }
+      let accepted = false;
+      try { p.prompt(); const choice = await p.userChoice; accepted = !!choice && choice.outcome === 'accepted'; } catch (err) { /* dismissed */ }
       render();
+      if (accepted) maybeOfferAlerts(`Installed. Now turn on alerts for ${homeLabel()}.`);
     }
     else if (id === 'home-alerts-go') {
       closeDialog();

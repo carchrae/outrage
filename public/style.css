@@ -182,6 +182,8 @@ html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-b
 .title-row > h1, .title-row > h2 { min-width: 0; }
 .install { flex: none; padding-top: 2px; }
 .install .btn { font-size: 1rem; padding: 8px 16px; }
+.btn.bell { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); }
+.btn.bell.on { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 .install[hidden] { display: none; }
 .dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); padding: 18px; width: min(440px, calc(100% - 32px)); box-sizing: border-box; font-size: 0.95rem; line-height: 1.45; }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
