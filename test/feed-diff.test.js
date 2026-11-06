@@ -41,6 +41,20 @@ test('normaliseSubscription rejects bad records and never keeps a house number',
   assert.deepEqual([rec.street, rec.core, rec.muni], ['adams rd', 'adams', 'bowen island']);
 });
 
+test('pruneToSubscribers keeps only outages on subscribed streets; new subscribers get no alert until a baseline exists', async () => {
+  const L = await import('../netlify/functions/lib/feed-diff.mjs');
+  const munis = ['Bowen Island', 'Burnaby'];
+  const all = L.slimFeed(planned([o(1, '1-9 Adams Rd', 'Bowen Island'), o(2, '5 Elm St', 'Burnaby'), o(3, '7 Oak St', 'Burnaby')]), 'planned');
+  const subs = [{ ...L.normaliseSubscription(sub('https://p/1', 'adams rd', '')), id: 'a' }];
+  const pruned = L.pruneToSubscribers(all, subs, munis);
+  assert.deepEqual(pruned.outages.map((x) => x.id), [1]);
+  assert.deepEqual(pruned.cores, ['adams']);
+  const changed = [{ ...all[0], change: 'added' }];
+  assert.equal(L.pickSubscribers(subs, changed, munis, new Set()).size, 0, 'street not in the previous copy');
+  assert.equal(L.pickSubscribers(subs, changed, munis, new Set(['adams'])).size, 1);
+  assert.equal(L.pickSubscribers(subs, changed, munis).size, 1, 'no baseline set given: no filtering');
+});
+
 test('check-feeds run(): stores the first copy, then pushes only to touched streets and drops dead endpoints', async () => {
   const C = await import('../netlify/functions/check-feeds.mjs');
   const L = await import('../netlify/functions/lib/feed-diff.mjs');
@@ -62,6 +76,10 @@ test('check-feeds run(): stores the first copy, then pushes only to touched stre
     blobs.set('sub/a', L.normaliseSubscription(sub('https://p/a', 'adams rd', 'Bowen Island')));
     blobs.set('sub/gone', L.normaliseSubscription(sub('https://p/gone', 'adams rd', '')));
     blobs.set('sub/elm', L.normaliseSubscription(sub('https://p/elm', 'elm st', '')));
+    // The subscribers are new, so their outage now enters the copy; it is a change but not an alert.
+    assert.deepEqual(await C.run({ store, send, log }), { changed: 1, pushed: 0, dropped: 0 });
+    assert.deepEqual(blobs.get('feeds/last').outages.map((x) => x.id), [1]);
+    assert.deepEqual(blobs.get('feeds/last').cores, ['adams', 'elm']);
     assert.deepEqual(await C.run({ store, send, log }), { changed: 0, pushed: 0 });
     feeds.planned = planned([o(1, '1-9 Adams Rd', 'Bowen Island', { dateOff: 300, dateOn: 400 })]);
     const r = await C.run({ store, send, log });

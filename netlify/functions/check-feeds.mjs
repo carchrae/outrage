@@ -9,7 +9,7 @@
  */
 import { getStore } from '@netlify/blobs';
 import webpush from 'web-push';
-import { slimFeed, collectMunis, diffFeeds, pickSubscribers } from './lib/feed-diff.mjs';
+import { slimFeed, collectMunis, diffFeeds, pickSubscribers, pruneToSubscribers } from './lib/feed-diff.mjs';
 
 export const config = { schedule: '@hourly' };
 
@@ -39,22 +39,26 @@ async function mapLimit(items, limit, fn) {
 export async function run({ store, send, log = console.log, now = Date.now() }) {
   const [planned, current] = await Promise.all([fetchJSON(FEEDS.planned), fetchJSON(FEEDS.current).catch((e) => { log('current feed failed: ' + e.message); return null; })]);
   const munis = collectMunis(planned, current);
-  const next = slimFeed(planned, 'planned').concat(current ? slimFeed(current, 'current') : []);
-  const prev = await store.get(LAST_KEY, { type: 'json' }).catch(() => null);
-  await store.setJSON(LAST_KEY, { at: now, outages: next });
-  if (!prev || !Array.isArray(prev.outages)) { log('first run: stored feed copy, nothing to compare'); return { changed: 0, pushed: 0, first: true }; }
-
-  // When the unplanned feed failed this run, do not report every unplanned outage as removed.
-  const prevOutages = current ? prev.outages : prev.outages.filter((o) => o.kind !== 'current');
-  const changed = diffFeeds(prevOutages, next);
-  if (!changed.length) { log('no changes'); return { changed: 0, pushed: 0 }; }
+  const all = slimFeed(planned, 'planned').concat(current ? slimFeed(current, 'current') : []);
 
   const { blobs } = await store.list({ prefix: 'sub/' });
   const subs = (await mapLimit(blobs, CONCURRENCY, async (b) => {
     const rec = await store.get(b.key, { type: 'json' }).catch(() => null);
     return rec && rec.endpoint ? { ...rec, id: b.key } : null;
   })).filter(Boolean);
-  const hits = pickSubscribers(subs, changed, munis);
+
+  // Only outages on subscribed streets are kept between runs; the copy records which streets it covers.
+  const next = pruneToSubscribers(all, subs, munis);
+  const prev = await store.get(LAST_KEY, { type: 'json' }).catch(() => null);
+  await store.setJSON(LAST_KEY, { at: now, outages: next.outages, cores: next.cores });
+  if (!prev || !Array.isArray(prev.outages)) { log('first run: stored feed copy, nothing to compare'); return { changed: 0, pushed: 0, first: true }; }
+
+  // When the unplanned feed failed this run, do not report every unplanned outage as removed.
+  const prevOutages = current ? prev.outages : prev.outages.filter((o) => o.kind !== 'current');
+  const changed = diffFeeds(prevOutages, next.outages);
+  if (!changed.length) { log(`no changes on ${next.cores.length} subscribed streets`); return { changed: 0, pushed: 0 }; }
+
+  const hits = pickSubscribers(subs, changed, munis, new Set(prev.cores || []));
   log(`${changed.length} changed outages, ${subs.length} subscribers, ${hits.size} to notify`);
 
   let pushed = 0, dropped = 0;

@@ -77,17 +77,31 @@ function muniMatches(subMuni, o, street) {
 }
 
 /**
+ * Keep only the outages that list a street someone subscribes to. The stored copy is then a few
+ * outages rather than the whole province, and the diff only ever looks at streets that matter.
+ * @returns {{outages: object[], cores: string[]}} the pruned list and the street cores it covers
+ */
+export function pruneToSubscribers(outages, subs, munis) {
+  const cores = new Set(subs.map((s) => s.core));
+  const kept = outages.filter((o) => streetsOf(o, munis).some((st) => cores.has(st.core)));
+  return { outages: kept, cores: [...cores].sort() };
+}
+
+/**
  * Which subscribers each change touches.
  * @param {object[]} subs normalised subscriber records (with an `id`)
  * @param {object[]} changed from diffFeeds
  * @param {string[]} munis known municipalities (for parsing)
+ * @param {Set<string>} [knownCores] street cores the previous copy covered; subscribers outside it are skipped
  * @returns {Map<string, {sub:object, ids:number[], kinds:Set<string>}>}
  */
-export function pickSubscribers(subs, changed, munis) {
+export function pickSubscribers(subs, changed, munis, knownCores) {
   const hits = new Map();
   if (!subs.length || !changed.length) return hits;
   const byCore = new Map();
   for (const sub of subs) {
+    // A street that was not in the previous copy has no baseline yet: its outages only look "added".
+    if (knownCores && !knownCores.has(sub.core)) continue;
     if (!byCore.has(sub.core)) byCore.set(sub.core, []);
     byCore.get(sub.core).push(sub);
   }

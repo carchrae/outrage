@@ -89,10 +89,12 @@ the push subscription. The house number, unit, snapshot and history never leave 
 
 - `netlify/functions/subscribe.mjs` serves `POST` and `DELETE /api/subscribe` and keeps one record
   per push endpoint in Netlify Blobs (store `push`).
-- `netlify/functions/check-feeds.mjs` runs hourly. It fetches both feeds, diffs them against the
-  copy from the previous run, works out which streets each added, changed or removed outage lists,
-  and pushes only to subscriptions on those streets. The payload is just outage ids. A 404 or 410
-  from the push service, or three failures in a row, deletes the record.
+- `netlify/functions/check-feeds.mjs` runs hourly. It fetches both feeds, keeps only the outages
+  that list a subscribed street, diffs that against the copy from the previous run, and pushes to
+  the subscriptions on the streets that changed. The payload is just outage ids. The stored copy
+  records which streets it covers, so a street subscribed since the last run gets its baseline
+  first and no spurious "new outage" alert. A 404 or 410 from the push service, or three failures
+  in a row, deletes the record.
 - `public/sw.js` handles the push: it fetches the feeds through `/api`, matches the saved address
   with the same `matcher.js` the page uses, diffs against the last snapshot and shows one
   notification describing the changes. Clicking it opens the site, which shows the same changes.
