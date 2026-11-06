@@ -14,8 +14,45 @@ const TZ = 'America/Vancouver';
 const DB_NAME = 'outage';
 const STORE = 'kv';
 
-self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+// ---------------------------------------------------------------- offline shell
+// The page and its assets are kept in a cache so the installed app opens without a network, and
+// the last copy of each feed is kept so an outage with no connectivity still shows something.
+// Chrome on Android also wants a fetch handler before it offers a real install.
+const CACHE = 'outage-v1';
+const SHELL = ['/', '/style.css', '/parse.js', '/matcher.js', '/alerts.js', '/app.js', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
+
+self.addEventListener('install', (e) => {
+  e.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(SHELL.map((url) => cache.add(new Request(url, { cache: 'reload' })).catch(() => {})));
+    await self.skipWaiting();
+  })());
+});
+
+self.addEventListener('activate', (e) => {
+  e.waitUntil((async () => {
+    for (const key of await caches.keys()) if (key !== CACHE) await caches.delete(key);
+    await self.clients.claim();
+  })());
+});
+
+// Network first, falling back to the cache: fresh when online, last known copy when not.
+self.addEventListener('fetch', (e) => {
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    try {
+      const res = await fetch(req);
+      if (res && res.ok) cache.put(req, res.clone()).catch(() => {});
+      return res;
+    } catch (err) {
+      const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' }) || (req.mode === 'navigate' ? await cache.match('/') : null);
+      if (hit) return hit;
+      throw err;
+    }
+  })());
+});
 
 self.addEventListener('push', (e) => {
   let payload = {};

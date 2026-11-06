@@ -89,6 +89,12 @@ the push subscription. The house number, unit, snapshot and history never leave 
   notification describing the changes. Clicking it opens the site, which shows the same changes.
 - Subscriptions are re-sent on every visit when the street changed or the record is a week old, and
   removed when the address is cleared.
+- The worker also caches the page, its assets and the last copy of each feed (network first), so the
+  installed app opens offline with the last known outages. Chrome on Android needs this before it
+  offers a real install rather than a shortcut.
+- Install is one tap on Android and desktop (the browser's own prompt); once accepted, the alerts
+  offer follows with the limitations in plain words. iPhone and iPad get the Add to Home Screen steps
+  and the installed copy offers alerts the first time it opens.
 
 Setup, once per site:
 

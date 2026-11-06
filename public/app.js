@@ -560,25 +560,33 @@
   function list(items) { return `<ul>${items.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>`; }
   function homeLabel() { return state.home ? esc(state.home.address) : ''; }
 
-  /** Install, and turn on alerts in the same go. Says only what applies to this device. */
+  /**
+   * Install on the first tap. Android and desktop get the browser's own install prompt straight away;
+   * once it is accepted the alerts offer follows, carrying the limitations. iPhone and iPad have no
+   * prompt, so they get the Add to Home Screen steps.
+   */
+  async function startInstall() {
+    const p = state.installPrompt;
+    if (!p) { installDialog(); return; }
+    state.installPrompt = null; render();
+    let accepted = false;
+    try { p.prompt(); const choice = await p.userChoice; accepted = !!choice && choice.outcome === 'accepted'; } catch (err) { /* dismissed */ }
+    render();
+    if (accepted && !maybeOfferAlerts(`Installed. Now turn on alerts for ${homeLabel()}.`) && !state.home) {
+      openDialog(`<h3>Installed</h3><p>Save your address to get outage alerts on this device.</p><div class="actions"><button type="button" class="btn small primary" id="dialog-close">OK</button></div>`);
+    }
+  }
+
+  /** The Add to Home Screen steps for iPhone and iPad, which have no install prompt. */
   function installDialog() {
     const d = device();
-    if (d.ios) {
-      const facts = [
-        'This adds Outage to your home screen as a shortcut to this website. It opens full screen like an app.',
-        'On iPhone and iPad, alerts only work from the home screen copy, not from Safari. The first time you open it from the icon it will offer to turn alerts on.',
-      ].concat(alertFacts(d));
-      openDialog(`<h3>Install on ${/ipad/i.test(navigator.userAgent) ? 'iPad' : 'iPhone'}</h3>
+    const facts = [
+      'This adds Outage to your home screen as a shortcut to this website. It opens full screen like an app.',
+      'On iPhone and iPad, alerts only work from the home screen copy, not from Safari. The first time you open it from the icon it will offer to turn alerts on.',
+    ].concat(alertFacts(d));
+    openDialog(`<h3>Install on ${/ipad/i.test(navigator.userAgent) ? 'iPad' : 'iPhone'}</h3>
 <p><b>How:</b> tap the Share button <span aria-hidden="true">(the square with an arrow)</span>, choose <b>Add to Home Screen</b>, then open Outage from the new icon.</p>
 ${list(facts)}<div class="actions"><button type="button" class="btn small primary" id="dialog-close">Got it</button></div>`);
-      return;
-    }
-    const withAlerts = !!state.home && A && A.supported() && A.status() !== 'on';
-    const intro = withAlerts
-      ? `This adds Outage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website, and turns on alerts for ${homeLabel()}.`
-      : `This adds Outage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website.${state.home ? '' : ' Save your address afterwards to get alerts.'}`;
-    openDialog(`<h3>${withAlerts ? 'Install and get alerts' : 'Install'}</h3><p>${intro}</p>${list(alertFacts(d))}
-<div class="actions"><button type="button" class="btn link small" id="dialog-close">Not now</button> <button type="button" class="btn small primary" id="install-go">Install</button></div>`);
   }
 
   /** The alert limitations for this device, before turning alerts on. */
@@ -865,7 +873,7 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
   els.home.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     const id = b ? b.id : e.target.id;
-    if (id === 'install-ask') installDialog();
+    if (id === 'install-ask') startInstall();
     else if (id === 'alerts-toggle') toggleAlerts();
     else if (id === 'home-forget') {
       e.preventDefault();
@@ -895,22 +903,12 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
   els.install.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.id === 'install-ask') installDialog();
+    if (b.id === 'install-ask') startInstall();
     else if (b.id === 'alerts-toggle') toggleAlerts();
   });
   els.dialog.addEventListener('click', async (e) => {
     const id = e.target.id;
     if (id === 'dialog-close') closeDialog();
-    else if (id === 'install-go') {
-      closeDialog();
-      const p = state.installPrompt;
-      if (!p) return;
-      state.installPrompt = null; render();
-      let accepted = false;
-      try { p.prompt(); const choice = await p.userChoice; accepted = !!choice && choice.outcome === 'accepted'; } catch (err) { /* dismissed */ }
-      render();
-      if (accepted) maybeOfferAlerts(`Installed. Now turn on alerts for ${homeLabel()}.`);
-    }
     else if (id === 'home-alerts-go') {
       closeDialog();
       state.alertsBusy = true; state.alertsMsg = ''; render();
