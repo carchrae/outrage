@@ -369,7 +369,7 @@
       summary += `<strong>${n}</strong> planned outage${n === 1 ? '' : 's'} list${n === 1 ? 's' : ''} ${whose} street${matches.q.number && excluded ? `, but not ${whose} house number` : ''}.`;
     }
     if (matches.weak.length) summary += ` ${matches.weak.length} similar street name${matches.weak.length === 1 ? '' : 's'} shown below.`;
-    if (!out.length && matches.nearby.length) summary += ` ${matches.nearby.length} unplanned outage${matches.nearby.length === 1 ? '' : 's'} elsewhere in ${esc(muni || matches.q.muni)}.`;
+    if (!out.length && matches.nearby.length && (whose !== 'your' || state.showMore)) summary += ` ${matches.nearby.length} unplanned outage${matches.nearby.length === 1 ? '' : 's'} elsewhere in ${esc(muni || matches.q.muni)}.`;
     return summary;
   }
 
@@ -403,6 +403,21 @@
       const head = planned ? 'Planned outage in progress on your street' : 'Power is out on your street';
       return `<div class="live${planned ? ' planned' : ''}"><div class="live-head">${head}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
     }).join('');
+  }
+
+  /** Unplanned outages elsewhere in the municipality: a compact line each, shown while details are hidden. */
+  function nearbyBox(matches, now) {
+    const near = matches.nearby.filter((i) => i.o.kind === 'current');
+    if (!near.length) return '';
+    const muni = state.home.muni || matches.q.muni || '';
+    const rows = near.map(({ o }) => {
+      const where = o.parsed.segments.length ? o.parsed.segments.map((s) => s.label).join(', ') : o.parsed.text;
+      const bits = [o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`];
+      if (o.numCustomersOut != null) bits.push(`${fmtNum(o.numCustomersOut)} customer${o.numCustomersOut === 1 ? '' : 's'}`);
+      if (o.dateOn) bits.push(`power back ${fmtDateTime(o.dateOn)}`);
+      return `<li><span class="where">${esc(where)}</span><span class="sub">${esc(bits.join(' · '))}</span></li>`;
+    });
+    return `<div class="nearby"><div class="nearby-head">${near.length} unplanned outage${near.length === 1 ? '' : 's'} near you${muni ? ' in ' + esc(muni) : ''}</div><ul>${rows.join('')}</ul></div>`;
   }
 
   /** The matched outages' times, one line each; outages happening now are in the live box instead. */
@@ -475,6 +490,7 @@
   ${liveStatus(matches, now)}
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
+  ${state.showMore ? '' : nearbyBox(matches, now)}
   ${changes}
   ${alertsControl()}
   <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-forget">Clear my address and history</a></p>
