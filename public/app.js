@@ -683,8 +683,8 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
     const muni = state.home.muni || q.muni || '';
     const st = A.status();
     const blocked = st === 'blocked';
-    // The checkbox is the choice being made; the small ON/OFF is what is in force right now.
-    const row = (key, label, detail, checked, disabled) => `<label class="opt${disabled ? ' off' : ''}"><input type="checkbox" name="topic" value="${key}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}><span><b>${label}</b> <span class="muted">${detail}</span><span class="state${on.includes(key) ? ' on' : ''}">${on.includes(key) ? 'on' : 'off'}</span></span></label>`;
+    // The ON/OFF badge follows the tick box, so the dialog always reads as what Save will do.
+    const row = (key, label, detail, checked, disabled) => `<label class="opt${disabled ? ' off' : ''}"><input type="checkbox" name="topic" value="${key}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}><span><b>${label}</b> <span class="muted">${detail}</span><span class="state${checked ? ' on' : ''}">${checked ? 'on' : 'off'}</span></span></label>`;
     const options = `<div class="opts">
 ${row('street', esc(street), 'outages that list your street', first ? true : on.includes('street'), blocked)}
 ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every outage in ' + esc(muni) + ', planned or unplanned' : 'add a municipality to your address to use this', first ? false : on.includes('muni'), blocked || !muni)}
@@ -1026,6 +1026,13 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (!b) return;
     if (b.id === 'install-ask') startInstall();
     else if (b.id === 'alerts-toggle') toggleAlerts();
+  });
+  // Ticking an option flips its ON/OFF badge straight away, so the dialog reads as what Save will do.
+  els.dialog.addEventListener('change', (e) => {
+    const box = e.target;
+    if (!box || box.name !== 'topic') return;
+    const badge = box.parentElement.querySelector('.state');
+    if (badge) { badge.textContent = box.checked ? 'on' : 'off'; badge.classList.toggle('on', box.checked); }
   });
   els.dialog.addEventListener('click', async (e) => {
     const id = e.target.id;
