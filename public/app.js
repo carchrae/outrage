@@ -57,6 +57,7 @@
       state.loading = false;
       render();
       document.documentElement.removeAttribute('data-boot');
+      if (A) A.register().catch(() => {});
       if (A && state.home && !state.error) {
         A.mirror('home', state.home); A.sync(state.home, state.munis);
         if (A.standalone()) maybeOfferAlerts(`Turn on alerts for ${homeLabel()} so this app can tell you when something changes.`);

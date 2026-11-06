@@ -78,7 +78,7 @@
   }
 
   async function register() {
-    if (!('serviceWorker' in navigator)) return null;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null;
     const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
     await navigator.serviceWorker.ready;
     return reg;
@@ -148,5 +148,5 @@
     } catch (e) { /* offline or server unavailable; try again next visit */ }
   }
 
-  window.OutageAlerts = { supported, status, needsInstall, isIOS, standalone, enable, disable, sync, mirror };
+  window.OutageAlerts = { supported, status, needsInstall, isIOS, standalone, enable, disable, sync, mirror, register };
 })();

@@ -114,8 +114,10 @@ npm test           # parser, matcher and feed-diff unit tests (node:test)
 npm run check-live # fetches the live feed and reports how well the parser handles every entry
 ```
 
-`netlify dev` also works if you have the Netlify CLI installed, and is the only way to exercise
-`/api/subscribe` locally; `npm start` answers it with 501.
+`npm start` generates a throwaway VAPID key for the run (when `web-push` is installed) and keeps
+push subscriptions in memory, so the Install and alerts buttons can be tried locally; set
+`VAPID_PUBLIC_KEY` to use your own key. No pushes are sent locally, since the hourly check only
+runs on Netlify. `netlify dev` also works if you have the Netlify CLI installed.
 
 ## How matching works
 
