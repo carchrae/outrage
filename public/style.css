@@ -175,9 +175,11 @@ details.more-streets .addresses { margin-top: 6px; }
 .save-alert div { flex: 1 1 320px; }
 .save-alert b { color: inherit; }
 
-html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-boot="home"] .site-footer, html[data-boot="home"] #install { display: none; }
+html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-boot="home"] .site-footer { display: none; }
 
-.install { display: flex; justify-content: flex-end; padding: 8px 12px 0; }
+.title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.title-row > h1, .title-row > h2 { min-width: 0; }
+.install { flex: none; padding-top: 4px; }
 .install[hidden] { display: none; }
 .dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); padding: 18px; width: min(440px, calc(100% - 32px)); box-sizing: border-box; font-size: 0.95rem; line-height: 1.45; }
 .dialog::backdrop { background: rgba(0, 0, 0, 0.55); }

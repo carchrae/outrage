@@ -374,8 +374,9 @@
     }
 
     const more = `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>`;
+    const install = installable() ? `<span class="install">${installButton()}</span>` : '';
     setHTML(els.home, `<div class="home-card">
-  <h2 class="home-title">Outages for ${addr}</h2>
+  <div class="title-row"><h2 class="home-title">Outages for ${addr}</h2>${install}</div>
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
   ${changes}
@@ -447,10 +448,16 @@
     let html = '';
     const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
     const ios = A && A.needsInstall();
-    if (!standalone && (state.installPrompt || ios)) html = `<button type="button" class="btn small" id="install-ask">Install</button>`;
+    if (!standalone && (state.installPrompt || ios)) html = installButton();
     setHTML(els.install, html);
     if (els.install.hidden !== !html) els.install.hidden = !html;
   }
+
+  function installable() {
+    const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    return !standalone && !!(state.installPrompt || (A && A.needsInstall()));
+  }
+  function installButton() { return `<button type="button" class="btn small" id="install-ask">Install</button>`; }
 
   /** The plain-words limitations shown before installing. */
   function installDialog() {
@@ -738,7 +745,8 @@
   });
   els.home.addEventListener('click', (e) => {
     const id = e.target.id;
-    if (id === 'home-forget') {
+    if (id === 'install-ask') installDialog();
+    else if (id === 'home-forget') {
       e.preventDefault();
       if (window.confirm(`Clear your saved address (${state.home.address}) and its outage history from this browser?`)) forgetHome();
     }
@@ -761,8 +769,8 @@
     else if (id === 'home-show') { e.preventDefault(); state.showSearch = false; state.query = state.home.address; els.q.value = state.query; state.muni = state.home.muni || ''; els.muni.value = state.muni; writeState(); render(); }
   });
   window.addEventListener('popstate', () => { readState(); render(); });
-  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; renderInstall(); });
-  window.addEventListener('appinstalled', () => { state.installPrompt = null; renderInstall(); });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; render(); });
+  window.addEventListener('appinstalled', () => { state.installPrompt = null; render(); });
   els.install.addEventListener('click', (e) => { if (e.target.id === 'install-ask') installDialog(); });
   els.dialog.addEventListener('click', async (e) => {
     const id = e.target.id;
@@ -771,9 +779,9 @@
       closeDialog();
       const p = state.installPrompt;
       if (!p) return;
-      state.installPrompt = null; renderInstall();
+      state.installPrompt = null; render();
       try { p.prompt(); await p.userChoice; } catch (err) { /* dismissed */ }
-      renderInstall();
+      render();
     }
     else if (id === 'home-alerts-go') {
       closeDialog();
