@@ -260,18 +260,23 @@
         const lower = tok.toLowerCase();
         const knownLocality = muniSet.has(lower) || LOCALITY_RE.test(tok);
         // "Radar Hill" in the middle of a street list is a street, not the locality of what came before.
-        const midList = !knownLocality && lastSegsInChunk.length > 0 && ti < lastTokenIdx;
+        // So is the last name in a list of bare street names ("Adams, Amelia, ..., Windjammer").
+        const bare = lastSegsInChunk.filter((sg) => !sg.numbers.length && !hasSuffix(sg.street)).length;
+        const namesList = lastSegsInChunk.length >= 3 && bare * 2 >= lastSegsInChunk.length;
+        const midList = !knownLocality && lastSegsInChunk.length > 0 && (ti < lastTokenIdx || namesList);
         const isLocality = knownLocality || (!hasSuffix(tok) && !midList);
         if (isLocality) {
+          if (!lastSegsInChunk.length && !pending.length && !knownLocality) {
+            // Named place with no numbers at the start of a chunk (e.g. "Dragon Mountain Tower", "Adams").
+            const seg = makeSegment(tok, [], qualifier);
+            segments.push(seg); lastSegsInChunk.push(seg);
+            continue;
+          }
           currentLocality = tok;
           for (const seg of lastSegsInChunk) if (!seg.locality) seg.locality = tok;
           if (qualifier && lastSegsInChunk.length) {
             const last = lastSegsInChunk[lastSegsInChunk.length - 1];
             last.qualifier += (last.qualifier ? '; ' : '') + qualifier;
-          }
-          if (!lastSegsInChunk.length && !pending.length && !muniSet.has(lower) && !LOCALITY_RE.test(tok)) {
-            // Named place with no numbers (e.g. "Dragon Mountain Tower").
-            segments.push(makeSegment(tok, [], qualifier));
           }
           continue;
         }

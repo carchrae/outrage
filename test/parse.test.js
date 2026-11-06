@@ -146,3 +146,14 @@ test('street-only list inside a bold note: any house number matches, slashes exp
   assert.equal(P.matchOutage(P.parseQuery('1400 Adams Road', ['Bowen Island']), p2).level, 5);
   assert.equal(P.matchOutage(P.parseQuery('1800 Adams Road', ['Bowen Island']), p2).level, 3);
 });
+
+test('a list of bare street names does not treat the last name as a locality', () => {
+  const p = P.parseArea('<b>Parts of Bowen Island</b><br/>Adams, Amelia, Anastasia, Blue Sky Cir, Eagle Tree Rd, Windjammer', ['Bowen Island']);
+  assert.deepEqual(p.segments.map((s) => s.label), ['Adams', 'Amelia', 'Anastasia', 'Blue Sky Cir', 'Eagle Tree Rd', 'Windjammer']);
+  assert.ok(p.segments.every((s) => s.locality === ''));
+  assert.equal(P.matchOutage(P.parseQuery('1400 Windjammer Rd', ['Bowen Island']), p).streetScore, 2);
+  // A trailing municipality after numbered streets is still a locality.
+  const q = P.parseArea('2232, 2261, 2820 108 Mile Rd, 4880 Bells Lake Rd, 5457 Kornelson Dr, Horsefly', []);
+  assert.equal(q.segments.length, 3);
+  assert.ok(q.segments.every((s) => s.locality === 'Horsefly'));
+});
