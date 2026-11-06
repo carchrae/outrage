@@ -112,16 +112,27 @@
    * dropped the subscription, and re-send the street when the saved address changed or the record is old.
    */
   async function sync(home, munis) {
-    if (status() !== 'on') return;
-    if (!home) { await disable(); return; }
+    if (!supported()) return false;
+    if (status() === 'blocked') return false;
+    if (!home) { if (status() === 'on') await disable(); return false; }
     try {
       const reg = await register();
-      if (Notification.permission !== 'granted') { writeFlag(null); return; }
+      if (Notification.permission !== 'granted') { if (readFlag()) writeFlag(null); return false; }
+      if (status() !== 'on') {
+        // The browser still holds a push subscription but this page has lost its record of it (cleared
+        // storage, or a record written before topics existed): adopt it as street alerts rather than
+        // showing "off" while pushes keep arriving.
+        const existing = await reg.pushManager.getSubscription();
+        if (!existing) return false;
+        await post(existing, home, munis, ['street']);
+        return true;
+      }
       const sub = await subscribe(reg);
       const flag = readFlag() || {};
       const { street, muni } = streetOf(home, munis);
       if (flag.street !== street || flag.muni !== muni || flag.endpoint !== sub.endpoint || Date.now() - (flag.at || 0) > RESYNC_MS) await post(sub, home, munis, flag.topics || ['street']);
     } catch (e) { /* offline or server unavailable; try again next visit */ }
+    return false;
   }
 
   window.OutageAlerts = { supported, status, topics, needsInstall, isIOS, standalone, enable, disable, sync, register };

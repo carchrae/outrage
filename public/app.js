@@ -60,7 +60,7 @@
       document.documentElement.removeAttribute('data-boot');
       if (A) A.register().catch(() => {});
       if (A && state.home && !state.error) {
-        A.sync(state.home, state.munis);
+        A.sync(state.home, state.munis).then((changed) => { if (changed) render(); });
         if (A.standalone()) maybeOfferAlerts(`Turn on alerts for ${homeLabel()} so this app can tell you when something changes.`);
       }
     }
@@ -343,7 +343,7 @@
       state.baseline = undefined; state.diff = null; state.history = []; state.alertsMsg = '';
     }
     render();
-    if (A && changed) A.sync(state.home, state.munis); // moves an existing alert subscription to the new street
+    if (A && changed) A.sync(state.home, state.munis).then((c) => { if (c) render(); }); // moves an existing alert subscription to the new street
   }
 
 
@@ -686,8 +686,8 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
     // The ON/OFF badge follows the tick box, so the dialog always reads as what Save will do.
     const row = (key, label, detail, checked, disabled) => `<label class="opt${disabled ? ' off' : ''}"><input type="checkbox" name="topic" value="${key}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}><span><b>${label}</b> <span class="muted">${detail}</span><span class="state${checked ? ' on' : ''}">${checked ? 'on' : 'off'}</span></span></label>`;
     const options = `<div class="opts">
-${row('street', esc(street), 'outages that list your street', first ? true : on.includes('street'), blocked)}
-${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every outage in ' + esc(muni) + ', planned or unplanned' : 'add a municipality to your address to use this', first ? false : on.includes('muni'), blocked || !muni)}
+${row('street', esc(street), 'outages that list your street', on.includes('street'), blocked)}
+${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every outage in ' + esc(muni) + ', planned or unplanned' : 'add a municipality to your address to use this', on.includes('muni'), blocked || !muni)}
 </div>`;
     const note = blocked ? `<p class="alerts-msg">Notifications are blocked for this site in your browser settings. Allow them there, then come back.</p>` : '';
     const actions = blocked
@@ -1039,6 +1039,13 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (id === 'dialog-close') closeDialog();
     else if (id === 'home-alerts-go') {
       const wanted = [...els.dialog.querySelectorAll('input[name="topic"]:checked')].map((i) => i.value);
+      if (!wanted.length && !A.topics().length) {
+        // Nothing chosen and nothing on: say so instead of silently doing nothing.
+        let note = els.dialog.querySelector('.alerts-msg');
+        if (!note) { note = document.createElement('p'); note.className = 'alerts-msg'; els.dialog.querySelector('.actions').before(note); }
+        note.textContent = 'Tick what you want alerts for.';
+        return;
+      }
       closeDialog();
       state.alertsBusy = true; state.alertsMsg = ''; render();
       const action = wanted.length ? A.enable(state.home, state.munis, wanted) : A.disable().then(() => { state.alertsMsg = 'Alerts off.'; });
