@@ -31,7 +31,7 @@ export function collectMunis(...feeds) {
 }
 
 function same(a, b) {
-  return a.dateOff === b.dateOff && a.dateOn === b.dateOn && a.area === b.area && a.lastUpdated === b.lastUpdated && a.crew === b.crew;
+  return a.dateOff === b.dateOff && a.dateOn === b.dateOn && a.area === b.area && a.lastUpdated === b.lastUpdated && (a.crew || '') === (b.crew || '');
 }
 
 /**
