@@ -920,23 +920,40 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
 
   const DEBOUNCE_MS = 400;
   let timer = 0;
+  /**
+   * A full address typed, pasted or autofilled into the address line ("1261 Adams Rd, Bowen Island, BC V0N 1G2")
+   * carries its municipality: move that into the Municipality field and keep only the street part.
+   * Only a municipality the feeds know is moved, so a street called "Hope" or an unknown town is left alone.
+   */
+  function absorbMuni() {
+    const q = P.parseQuery(state.query, state.munis);
+    if (!q.muni || !q.key) return false;
+    const known = state.munis.find((m) => m.toLowerCase() === q.muni.toLowerCase());
+    if (!known) return false;
+    const address = `${q.unit ? q.unit + '-' : ''}${q.number != null ? q.number + ' ' : ''}${q.street}`.trim();
+    state.query = address; state.muni = known;
+    if (els.q.value !== address) els.q.value = address;
+    if (els.muni.value !== known) els.muni.value = known;
+    return true;
+  }
+
   function onInput() {
     clearTimeout(timer);
     timer = setTimeout(() => {
       const v = els.q.value.trim();
       if (v === state.query) return;
-      state.query = v; writeState(); render();
+      state.query = v; absorbMuni(); writeState(); render();
     }, DEBOUNCE_MS);
   }
   els.q.addEventListener('input', onInput);
   els.form.addEventListener('submit', (e) => {
     e.preventDefault(); clearTimeout(timer);
-    state.query = els.q.value.trim(); writeState();
+    state.query = els.q.value.trim(); absorbMuni(); writeState();
     if (state.query && queryIsAddress()) saveHome(state.query, state.muni);
     else render();
     els.q.blur();
   });
-  els.q.addEventListener('blur', () => { const v = els.q.value.trim(); if (v !== state.query) { clearTimeout(timer); state.query = v; writeState(); render(); } });
+  els.q.addEventListener('blur', () => { const v = els.q.value.trim(); if (v !== state.query) { clearTimeout(timer); state.query = v; absorbMuni(); writeState(); render(); } });
   let muniTimer = 0;
   const onMuni = () => {
     clearTimeout(muniTimer);
