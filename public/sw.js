@@ -11,7 +11,7 @@
 importScripts('/parse.js', '/matcher.js');
 const M = self.OutageMatcher;
 const TZ = 'America/Vancouver';
-const DB_NAME = 'outrage';
+const DB_NAME = 'outage';
 const STORE = 'kv';
 
 self.addEventListener('install', () => self.skipWaiting());
@@ -87,7 +87,7 @@ async function notify(payload) {
     }
   }
   await self.registration.showNotification(title, {
-    body, tag: 'outrage-alert', renotify: true, icon: '/icon-192.png', badge: '/icon-192.png',
+    body, tag: 'outage-alert', renotify: true, icon: '/icon-192.png', badge: '/icon-192.png',
     data: { url: '/', ids: payload.ids || [] },
   });
 }

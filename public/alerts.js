@@ -10,7 +10,7 @@
   'use strict';
   const P = window.OutageParser;
   const FLAG_KEY = 'outage-finder.alerts';
-  const DB_NAME = 'outrage';
+  const DB_NAME = 'outage';
   const STORE = 'kv';
   const RESYNC_MS = 7 * 24 * 3600 * 1000;
   const metaKey = document.querySelector('meta[name="vapid-public-key"]');

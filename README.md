@@ -44,7 +44,7 @@ when alerts are turned on, the street name and municipality (see "Push alerts").
 | `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
 | `outage-finder.alerts` | street, municipality and push endpoint registered for alerts |
 
-The address and snapshot are also mirrored into IndexedDB (database `outrage`, store `kv`) because
+The address and snapshot are also mirrored into IndexedDB (database `outage`, store `kv`) because
 the service worker cannot read localStorage.
 
 The "since your last visit" baseline is pinned in sessionStorage so a reload does not clear the

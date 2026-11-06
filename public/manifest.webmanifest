@@ -1,7 +1,7 @@
 {
   "name": "Outage",
   "short_name": "Outage",
-  "description": "BC Hydro planned and unplanned outages for your address, with alerts when they change.",
+  "description": "BC Hydro outages for your address, with alerts when they change.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

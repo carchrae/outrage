@@ -51,7 +51,6 @@ a { color: var(--accent); }
 .site-header[hidden] { display: none; }
 .site-header .wrap, .site-footer.wrap, .search, .status, .home > .hint, .home > .save-alert, .overview, .group-head, .search-title, .browse, .history { padding-left: 12px; padding-right: 12px; }
 .site-header h1 { margin: 0 0 4px; font-size: 1.8rem; letter-spacing: -0.01em; }
-.tagline { margin: 0; font-size: 1.05rem; font-style: italic; }
 .site-header .sub { margin: 8px 0 0; color: var(--muted); font-size: 0.95rem; }
 
 .search { margin: 20px 0 10px; }
