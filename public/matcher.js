@@ -1,5 +1,5 @@
 /*
- * Shared matching and change-detection logic for Planned outrage.
+ * Shared matching and change-detection logic for Outage.
  *
  * Used by the page (app.js), the service worker (sw.js) and tests, so the
  * notification a push produces agrees with what the page shows.

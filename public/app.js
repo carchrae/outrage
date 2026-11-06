@@ -532,18 +532,18 @@
     const d = device();
     if (d.ios) {
       const facts = [
-        'This adds Planned outrage to your home screen as a shortcut to this website. It opens full screen like an app.',
+        'This adds Outage to your home screen as a shortcut to this website. It opens full screen like an app.',
         'On iPhone and iPad, alerts only work from the home screen copy, not from Safari. The first time you open it from the icon it will offer to turn alerts on.',
       ].concat(alertFacts(d));
       openDialog(`<h3>Install on ${/ipad/i.test(navigator.userAgent) ? 'iPad' : 'iPhone'}</h3>
-<p><b>How:</b> tap the Share button <span aria-hidden="true">(the square with an arrow)</span>, choose <b>Add to Home Screen</b>, then open Planned outrage from the new icon.</p>
+<p><b>How:</b> tap the Share button <span aria-hidden="true">(the square with an arrow)</span>, choose <b>Add to Home Screen</b>, then open Outage from the new icon.</p>
 ${list(facts)}<div class="actions"><button type="button" class="btn small primary" id="dialog-close">Got it</button></div>`);
       return;
     }
     const withAlerts = !!state.home && A && A.supported() && A.status() !== 'on';
     const intro = withAlerts
-      ? `This adds Planned outrage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website, and turns on alerts for ${homeLabel()}.`
-      : `This adds Planned outrage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website.${state.home ? '' : ' Save your address afterwards to get alerts.'}`;
+      ? `This adds Outage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website, and turns on alerts for ${homeLabel()}.`
+      : `This adds Outage to your ${d.phone ? 'home screen' : 'computer'} as a shortcut to this website.${state.home ? '' : ' Save your address afterwards to get alerts.'}`;
     openDialog(`<h3>${withAlerts ? 'Install and get alerts' : 'Install'}</h3><p>${intro}</p>${list(alertFacts(d))}
 <div class="actions"><button type="button" class="btn link small" id="dialog-close">Not now</button> <button type="button" class="btn small primary" id="install-go">Install</button></div>`);
   }

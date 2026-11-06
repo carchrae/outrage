@@ -1,4 +1,4 @@
-# Push alerts for Planned outrage
+# Push alerts for Outage
 
 Written 2026-11-02, implemented 2026-11-05. The design below was built as described, with these adjustments:
 

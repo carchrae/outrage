@@ -3,9 +3,9 @@
 [outrage.bowenlift.com](https://outrage.bowenlift.com/)
 
 
-# Planned outrage
+# Outage
 
-A single-page app that makes BC Hydro's planned-outage list searchable by street address.
+A single-page app that makes BC Hydro's planned and unplanned outage lists searchable by street address.
 BC Hydro publishes each outage's affected area as free text such as
 `7420-7591 Kraft Cres, 7470-7586 Kraft Pl, Burnaby`. This app parses that text into
 street segments with house-number ranges, so you can type `7500 Kraft Crescent, Burnaby`
@@ -139,4 +139,3 @@ runs on Netlify. `netlify dev` also works if you have the Netlify CLI installed.
 
 Matching can only be as good as BC Hydro's text. Entries such as "Traffic signals at 72 Ave
 and 194A St" or "Parts of Heffley Creek" have no house numbers and only match by text.
-# outrage

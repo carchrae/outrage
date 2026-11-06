@@ -1,5 +1,5 @@
 /*
- * Service worker for Planned outrage: turns a push from the hourly feed check into a notification.
+ * Service worker for Outage: turns a push from the hourly feed check into a notification.
  *
  * The server only knows the subscriber's street. On a push the worker fetches both feeds through the
  * site's own /api proxy, matches the full saved address (read from IndexedDB, mirrored there by the
@@ -58,7 +58,7 @@ async function fetchJSON(url) {
 }
 
 async function notify(payload) {
-  let title = 'Planned outrage';
+  let title = 'Outage';
   let body = 'Outage information for your street changed. Open to see the latest.';
   const home = await idbGet('home');
   if (home && home.address) {
