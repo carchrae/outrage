@@ -119,7 +119,7 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .site-footer { padding: 16px 0 40px; color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--border); }
 @media (max-width: 520px) {
   .search-row { flex-direction: column; }
-  .btn.primary { width: 100%; }
+  .search-row .btn.primary { width: 100%; }
 }
 
 /* ---- your address panel ---- */
@@ -161,7 +161,7 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .history summary { cursor: pointer; }
 .history ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; }
 .history li { padding: 6px 0; border-top: 1px solid var(--border); }
-.history { padding: 0; }
+.history { padding-top: 0; padding-bottom: 0; }
 .history .hist-when { color: var(--text); font-weight: 600; }
 .history .muted { color: var(--muted); }
 

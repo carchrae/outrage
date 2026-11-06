@@ -457,7 +457,7 @@
     const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
     return !standalone && !!(state.installPrompt || (A && A.needsInstall()));
   }
-  function installButton() { return `<button type="button" class="btn small" id="install-ask">Install</button>`; }
+  function installButton() { return `<button type="button" class="btn small primary" id="install-ask">Install</button>`; }
 
   /** The plain-words limitations shown before installing. */
   function installDialog() {
