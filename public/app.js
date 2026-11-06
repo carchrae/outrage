@@ -14,9 +14,8 @@
   const $ = (sel) => document.querySelector(sel);
   const els = {
     header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
-    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'),
+    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'),
   };
-  const INSTALL_KEY = 'outage-finder.install-dismissed';
 
   const HOME_KEY = 'outage-finder.home';
   const SNAP_KEY = 'outage-finder.snapshot';
@@ -28,7 +27,7 @@
   const state = {
     outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
     home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], showSearch: false,
-    alertsBusy: false, alertsMsg: '', alertsExplain: false, showMore: false, installPrompt: null, installExplain: false,
+    alertsBusy: false, alertsMsg: '', showMore: false, installPrompt: null,
     current: [], currentError: '',
   };
 
@@ -395,17 +394,6 @@
     else if (st === 'on') html = `<span class="alerts-on">Alerts on</span> <span class="muted">·</span> <a href="#" id="home-alerts-off">Turn off</a>`;
     else if (A.needsInstall()) html = `<span class="muted">For alerts on iPhone or iPad, add this page to your Home Screen (Share, then Add to Home Screen) and open it from there.</span>`;
     else if (state.alertsBusy) html = `<span class="muted">Turning on alerts…</span>`;
-    else if (state.alertsExplain) {
-      const limits = [
-        'We check BC Hydro once an hour, so an alert can be up to an hour behind their website.',
-        'You get an alert when an outage that lists your street is added, changed, cancelled or removed.',
-        'BC Hydro sometimes lists a whole street, so an alert does not always mean your house is affected. Open the page to see the details.',
-        'Your street name and town are kept on our server so we know what to send you. Your house number stays on this device.',
-        'Alerts need notifications allowed for this site in your browser.' + (/android/i.test(navigator.userAgent) ? ' Battery saver settings can delay them.' : ''),
-        'This is not BC Hydro. For anything important, check bchydro.com too.',
-      ];
-      html = `<div class="explain"><b>Before you turn on alerts</b><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul><span class="actions"><button type="button" class="btn small primary" id="home-alerts-go">Turn on alerts</button> <button type="button" class="btn link small" id="home-alerts-cancel">Cancel</button></span></div>`;
-    }
     else html = `<a href="#" id="home-alerts-on">Get alerts when this changes</a>`;
     const msg = state.alertsMsg ? ` <span class="alerts-msg">${esc(state.alertsMsg)}</span>` : '';
     return `<p class="home-alerts">${html}${msg}</p>`;
@@ -457,29 +445,54 @@
   /** Offer to install the page as an app where that is possible and not yet done. */
   function renderInstall() {
     let html = '';
-    let dismissed = false;
-    try { dismissed = !!localStorage.getItem(INSTALL_KEY); } catch (e) { /* ignore */ }
     const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
     const ios = A && A.needsInstall();
-    if (!dismissed && !standalone && (state.installPrompt || ios)) {
-      const notNow = `<button type="button" class="btn link small" id="install-no">Not now</button>`;
-      if (!state.installExplain) {
-        html = `<span>Add this page to your home screen to get outage alerts on this device.</span><span class="actions"><button type="button" class="btn small primary" id="install-ask">${ios ? 'How' : 'Install'}</button> ${notNow}</span>`;
-      } else {
-        const android = /android/i.test(navigator.userAgent);
-        const limits = [
-          'This is a shortcut to this website, not an app from the app store. It opens full screen and can show alerts.',
-          'It only knows what BC Hydro publishes. If BC Hydro leaves your street off the list, there is no alert.',
-        ];
-        if (ios) limits.push('On iPhone and iPad, alerts only work when you open the page from the home screen icon, not from Safari.', 'If you do not open it for a few weeks, iPhone may stop the alerts. Opening it again turns them back on.');
-        else if (android) limits.push('Alerts come through ' + (/samsungbrowser/i.test(navigator.userAgent) ? 'Samsung Internet' : /firefox/i.test(navigator.userAgent) ? 'Firefox' : 'Chrome') + ', so that browser must stay installed and allowed to show notifications.', 'Battery saver settings can delay alerts by a few hours.');
-        else limits.push('Alerts come through this browser, so it must stay installed and allowed to show notifications.');
-        const steps = ios ? `<p><b>How:</b> tap the Share button, choose <b>Add to Home Screen</b>, then open Planned outrage from the new icon and turn alerts on there.</p>` : '';
-        html = `<div class="explain"><b>Before you add it</b><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${steps}<span class="actions">${ios ? `<button type="button" class="btn small primary" id="install-no">Got it</button>` : `<button type="button" class="btn small primary" id="install-go">Install now</button> ${notNow}`}</span></div>`;
-      }
-    }
+    if (!standalone && (state.installPrompt || ios)) html = `<button type="button" class="btn small" id="install-ask">Install</button>`;
     setHTML(els.install, html);
     if (els.install.hidden !== !html) els.install.hidden = !html;
+  }
+
+  /** The plain-words limitations shown before installing. */
+  function installDialog() {
+    const ios = A && A.needsInstall();
+    const ua = navigator.userAgent;
+    const android = /android/i.test(ua);
+    const limits = [
+      'This is a shortcut to this website, not an app from the app store. It opens full screen and can show alerts.',
+      'It only knows what BC Hydro publishes. If BC Hydro leaves your street off the list, there is no alert.',
+    ];
+    if (ios) limits.push('On iPhone and iPad, alerts only work when you open the page from the home screen icon, not from Safari.', 'If you do not open it for a few weeks, iPhone may stop the alerts. Opening it again turns them back on.');
+    else if (android) limits.push('Alerts come through ' + (/samsungbrowser/i.test(ua) ? 'Samsung Internet' : /firefox/i.test(ua) ? 'Firefox' : 'Chrome') + ', so that browser must stay installed and allowed to show notifications.', 'Battery saver settings can delay alerts by a few hours.');
+    else limits.push('Alerts come through this browser, so it must stay installed and allowed to show notifications.');
+    const steps = ios ? `<p><b>How:</b> tap the Share button, choose <b>Add to Home Screen</b>, then open Planned outrage from the new icon and turn alerts on there.</p>` : '';
+    const actions = ios
+      ? `<button type="button" class="btn small primary" id="dialog-close">Got it</button>`
+      : `<button type="button" class="btn link small" id="dialog-close">Not now</button> <button type="button" class="btn small primary" id="install-go">Install</button>`;
+    openDialog(`<h3>Install</h3><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${steps}<div class="actions">${actions}</div>`);
+  }
+
+  /** The plain-words limitations shown before turning alerts on. */
+  function alertsDialog() {
+    const limits = [
+      'We check BC Hydro once an hour, so an alert can be up to an hour behind their website.',
+      'You get an alert when an outage that lists your street is added, changed, cancelled or removed.',
+      'BC Hydro sometimes lists a whole street, so an alert does not always mean your house is affected. Open the page to see the details.',
+      'Your street name and town are kept on our server so we know what to send you. Your house number stays on this device.',
+      'Alerts need notifications allowed for this site in your browser.' + (/android/i.test(navigator.userAgent) ? ' Battery saver settings can delay them.' : ''),
+      'This is not BC Hydro. For anything important, check bchydro.com too.',
+    ];
+    openDialog(`<h3>Get outage alerts</h3><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul><div class="actions"><button type="button" class="btn link small" id="dialog-close">Cancel</button> <button type="button" class="btn small primary" id="home-alerts-go">Turn on alerts</button></div>`);
+  }
+
+  function openDialog(html) {
+    els.dialog.innerHTML = html;
+    if (typeof els.dialog.showModal === 'function') { if (!els.dialog.open) els.dialog.showModal(); }
+    else els.dialog.setAttribute('open', '');
+  }
+  function closeDialog() {
+    if (typeof els.dialog.close === 'function' && els.dialog.open) els.dialog.close();
+    else els.dialog.removeAttribute('open');
+    els.dialog.innerHTML = '';
   }
 
   function summary(r) {
@@ -734,15 +747,7 @@
       state.showSearch = true; state.query = ''; els.q.value = ''; state.muni = state.home.muni || DEFAULT_MUNI; els.muni.value = state.muni;
       writeState(); render(); els.q.focus();
     }
-    else if (id === 'home-alerts-on') { e.preventDefault(); state.alertsExplain = true; state.alertsMsg = ''; render(); }
-    else if (id === 'home-alerts-cancel') { state.alertsExplain = false; render(); }
-    else if (id === 'home-alerts-go') {
-      state.alertsExplain = false; state.alertsBusy = true; state.alertsMsg = ''; render();
-      A.enable(state.home, state.munis)
-        .then(() => { state.alertsMsg = ''; })
-        .catch((err) => { state.alertsMsg = err && err.message ? err.message : 'Could not turn on alerts.'; })
-        .then(() => { state.alertsBusy = false; render(); });
-    }
+    else if (id === 'home-alerts-on') { e.preventDefault(); state.alertsMsg = ''; alertsDialog(); }
     else if (id === 'home-alerts-off') {
       e.preventDefault();
       state.alertsMsg = '';
@@ -758,14 +763,25 @@
   window.addEventListener('popstate', () => { readState(); render(); });
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; renderInstall(); });
   window.addEventListener('appinstalled', () => { state.installPrompt = null; renderInstall(); });
-  els.install.addEventListener('click', async (e) => {
+  els.install.addEventListener('click', (e) => { if (e.target.id === 'install-ask') installDialog(); });
+  els.dialog.addEventListener('click', async (e) => {
     const id = e.target.id;
-    if (id === 'install-no') { try { localStorage.setItem(INSTALL_KEY, '1'); } catch (err) { /* ignore */ } state.installExplain = false; renderInstall(); }
-    else if (id === 'install-ask') { state.installExplain = true; renderInstall(); }
-    else if (id === 'install-go' && state.installPrompt) {
-      const p = state.installPrompt; state.installPrompt = null; state.installExplain = false; renderInstall();
+    if (id === 'dialog-close') closeDialog();
+    else if (id === 'install-go') {
+      closeDialog();
+      const p = state.installPrompt;
+      if (!p) return;
+      state.installPrompt = null; renderInstall();
       try { p.prompt(); await p.userChoice; } catch (err) { /* dismissed */ }
       renderInstall();
+    }
+    else if (id === 'home-alerts-go') {
+      closeDialog();
+      state.alertsBusy = true; state.alertsMsg = ''; render();
+      A.enable(state.home, state.munis)
+        .then(() => { state.alertsMsg = ''; })
+        .catch((err) => { state.alertsMsg = err && err.message ? err.message : 'Could not turn on alerts.'; })
+        .then(() => { state.alertsBusy = false; render(); });
     }
   });
 

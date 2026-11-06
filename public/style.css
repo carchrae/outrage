@@ -177,15 +177,17 @@ details.more-streets .addresses { margin-top: 6px; }
 
 html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-boot="home"] .site-footer, html[data-boot="home"] #install { display: none; }
 
-.install { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 10px 12px; margin: 8px 0 4px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--surface); font-size: 0.92rem; }
+.install { display: flex; justify-content: flex-end; padding: 8px 12px 0; }
 .install[hidden] { display: none; }
-.install .actions { display: flex; gap: 6px 12px; align-items: center; }
+.dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); padding: 18px; width: min(440px, calc(100% - 32px)); box-sizing: border-box; font-size: 0.95rem; line-height: 1.45; }
+.dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.dialog h3 { margin: 0 0 10px; font-size: 1.1rem; }
+.dialog ul { margin: 0 0 12px; padding-left: 18px; }
+.dialog li { margin: 4px 0; }
+.dialog p { margin: 0 0 12px; }
+.dialog .actions { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: flex-end; align-items: center; }
 .upcoming li .sub { display: block; color: var(--muted); font-size: 0.9rem; }
 .home-more { margin: 12px 0 0; }
-.explain { display: block; width: 100%; }
-.explain ul { margin: 6px 0 8px; padding-left: 18px; }
-.explain li { margin: 3px 0; }
-.explain p { margin: 0 0 8px; }
 .home-alerts { margin: 10px 0 0; font-size: 0.9rem; }
 .home-alerts .alerts-on { color: var(--hit); font-weight: 600; }
 .home-alerts .alerts-msg { color: var(--warn); }
