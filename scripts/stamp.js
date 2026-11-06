@@ -27,5 +27,8 @@ html = html.replace(/(<span id="build"[^>]*>)[^<]*(<\/span>)/, `$1build ${v}$2`)
 // The VAPID public key lets the page subscribe to push; without it the alert toggle stays hidden.
 const vapid = (process.env.VAPID_PUBLIC_KEY || '').trim();
 html = html.replace(/<meta name="vapid-public-key" content="[^"]*">/, `<meta name="vapid-public-key" content="${vapid}">`);
+// Address lookup from "Use my location" is only offered when the deploy has a BC Geocoder key.
+const geocoder = (process.env.BC_GEOCODER_KEY || '').trim() ? '1' : '';
+html = html.replace(/<meta name="geocoder" content="[^"]*">/, `<meta name="geocoder" content="${geocoder}">`);
 fs.writeFileSync(file, html);
 console.log('stamped public/index.html with version ' + v + (vapid ? ' and VAPID public key' : ' (no VAPID_PUBLIC_KEY: push alerts hidden)'));

@@ -23,8 +23,9 @@
   const HIST_KEY = 'outage-finder.history';
   const HIST_MAX = 300;
   const DEFAULT_MUNI = 'Bowen Island';
-  const GEO_KEY = 'outage-finder.geo'; // 'declined' once the location prompt was refused, so it is not repeated
   const GEO_MAX_KM = 60; // a centroid further than this is not a guess worth making
+  const geocoderMeta = document.querySelector('meta[name="geocoder"]');
+  const HAS_GEOCODER = !!(geocoderMeta && geocoderMeta.content); // set at build time when BC_GEOCODER_KEY exists
 
   const state = {
     outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
@@ -60,7 +61,6 @@
       render();
       document.documentElement.removeAttribute('data-boot');
       if (A) A.register().catch(() => {});
-      guessMuni(false);
       if (A && state.home && !state.error) {
         A.mirror('home', state.home); A.sync(state.home, state.munis);
         if (A.standalone()) maybeOfferAlerts(`Turn on alerts for ${homeLabel()} so this app can tell you when something changes.`);
@@ -125,35 +125,41 @@
   }
 
   /**
-   * Guess the municipality from the device's location. Never touches a saved address or a municipality
-   * the visitor typed or arrived with; it only replaces the Bowen Island default on a fresh visit.
-   * With manual=true (the "Use my location" button) it always asks and always applies the result.
+   * "Use my location": asks for the device's location (never automatically), picks the nearest municipality
+   * from the bundled centroids, and, when the deploy has a BC Geocoder key, asks the server for the nearest
+   * civic address and puts it in the form for the visitor to check and save. A saved address is never touched.
    */
-  async function guessMuni(manual) {
+  async function locate() {
     if (!('geolocation' in navigator)) return;
-    if (!manual) {
-      if (state.home || !state.munis.length) return;
-      if (new URLSearchParams(location.search).get('muni')) return;
-      if (normText(state.muni) !== normText(DEFAULT_MUNI)) return;
-      try { if (localStorage.getItem(GEO_KEY) === 'declined') return; } catch (e) { /* ignore */ }
-      if (navigator.permissions && navigator.permissions.query) {
-        try { const p = await navigator.permissions.query({ name: 'geolocation' }); if (p.state === 'denied') return; } catch (e) { /* unsupported */ }
-      }
-    }
+    const note = (html) => setHTML(els.status, html);
+    note('<span class="muted">Finding your location…</span>');
     let pos;
     try {
-      pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: false, timeout: 8000, maximumAge: 3600e3 }));
+      pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 300e3 }));
     } catch (err) {
-      if (err && err.code === 1) { try { localStorage.setItem(GEO_KEY, 'declined'); } catch (e) { /* ignore */ } }
-      if (manual) { state.alertsMsg = ''; setHTML(els.status, `<span class="muted">Could not get your location${err && err.code === 1 ? ': permission was refused' : ''}.</span>`); }
+      note(`<span class="muted">Could not get your location${err && err.code === 1 ? ': permission was refused' : ''}.</span>`);
       return;
     }
-    const name = nearestMuni(pos.coords.latitude, pos.coords.longitude, await loadCentroids());
-    if (!name || !state.munis.some((m) => m === name)) return;
-    // The visitor may have started typing while the prompt was open.
-    if (!manual && (state.home || document.activeElement === els.muni || normText(state.muni) !== normText(DEFAULT_MUNI))) return;
-    state.muni = name; els.muni.value = name;
-    writeState(); render();
+    const { latitude: lat, longitude: lon } = pos.coords;
+    const name = nearestMuni(lat, lon, await loadCentroids());
+    if (name && state.munis.some((m) => m === name)) { state.muni = name; els.muni.value = name; }
+    let hit = null;
+    if (HAS_GEOCODER) {
+      try {
+        const res = await fetch(`/api/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`);
+        if (res.ok) hit = await res.json();
+      } catch (e) { /* offline or the function is unavailable */ }
+    }
+    if (hit && hit.address) {
+      state.query = hit.address; els.q.value = hit.address;
+      if (hit.locality && state.munis.some((m) => m.toLowerCase() === hit.locality.toLowerCase())) { state.muni = state.munis.find((m) => m.toLowerCase() === hit.locality.toLowerCase()); els.muni.value = state.muni; }
+      writeState(); render();
+      note(`<span class="muted">Nearest address from the BC Address Geocoder. Check it, then press Save Address.</span>`);
+      els.q.focus();
+    } else {
+      writeState(); render();
+      note(name ? `<span class="muted">Municipality set to ${esc(name)}. Type your address to continue.</span>` : '<span class="muted">You seem to be outside the areas BC Hydro lists.</span>');
+    }
   }
 
   let muniListSig = '';
@@ -944,7 +950,7 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
   els.muni.addEventListener('change', onMuni);
   els.past.addEventListener('change', () => { state.past = els.past.checked; writeState(); render(); });
   if ('geolocation' in navigator) els.locate.hidden = false;
-  els.locate.addEventListener('click', () => guessMuni(true));
+  els.locate.addEventListener('click', () => locate());
   els.clear.addEventListener('click', () => { state.query = ''; state.muni = DEFAULT_MUNI; els.q.value = ''; els.muni.value = state.muni; writeState(); render(); els.q.focus(); });
   els.results.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-muni]');

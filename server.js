@@ -19,6 +19,8 @@ if (!vapidPublicKey) {
   catch (e) { console.log('no VAPID_PUBLIC_KEY and web-push not installed: alert buttons will be hidden'); }
 }
 const subs = new Map();
+const geocoderKey = (process.env.BC_GEOCODER_KEY || '').trim();
+if (!geocoderKey) console.log('no BC_GEOCODER_KEY: "Use my location" will only pick the municipality');
 const PUBLIC = path.join(__dirname, 'public');
 const FEEDS = {
   '/api/planned': 'https://www.bchydro.com/power-outages/app/outages-list-data-planned.json',
@@ -40,6 +42,17 @@ async function proxy(url) {
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/api/locate') {
+    // Stand-in for netlify/functions/locate.mjs.
+    if (!geocoderKey) { res.writeHead(501, { 'Content-Type': 'application/json' }); return res.end('{"error":"Address lookup is not configured"}'); }
+    try {
+      const { inBC, nearestAddress } = await import('./netlify/functions/lib/geocode.mjs');
+      const lat = parseFloat(url.searchParams.get('lat')), lon = parseFloat(url.searchParams.get('lon'));
+      if (!isFinite(lat) || !isFinite(lon) || !inBC(lat, lon)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end('{"error":"Expected lat and lon inside BC"}'); }
+      const hit = await nearestAddress(lat, lon, geocoderKey);
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(hit || { address: '' }));
+    } catch (err) { res.writeHead(502, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: String(err.message || err) })); }
+  }
   if (url.pathname === '/api/subscribe') {
     // Stand-in for netlify/functions/subscribe.mjs: remembers subscriptions for this run only.
     let body = '';
@@ -73,9 +86,9 @@ http.createServer(async (req, res) => {
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404, { 'Content-Type': 'text/plain' }); return res.end('Not found'); }
     const type = MIME[path.extname(file)] || 'application/octet-stream';
-    if (file.endsWith('index.html') && vapidPublicKey) {
+    if (file.endsWith('index.html')) {
       // Same stamp scripts/stamp.js applies on Netlify, minus the asset versioning.
-      data = Buffer.from(data.toString().replace(/<meta name="vapid-public-key" content="[^"]*">/, `<meta name="vapid-public-key" content="${vapidPublicKey}">`));
+      data = Buffer.from(data.toString().replace(/<meta name="vapid-public-key" content="[^"]*">/, `<meta name="vapid-public-key" content="${vapidPublicKey}">`).replace(/<meta name="geocoder" content="[^"]*">/, `<meta name="geocoder" content="${geocoderKey ? '1' : ''}">`));
     }
     res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
     res.end(data);

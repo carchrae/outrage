@@ -4,6 +4,7 @@
   # picked up on the next normal visit, with no hard reload needed.
   command = "node scripts/stamp.js"
 
+# Address lookup: netlify/functions/locate.mjs (GET /api/locate), needs BC_GEOCODER_KEY.
 # Push alerts: netlify/functions/subscribe.mjs (POST/DELETE /api/subscribe) and the 10-minute
 # netlify/functions/check-feeds.mjs. Both need VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and
 # VAPID_SUBJECT set in the site's environment (see README).

@@ -89,3 +89,19 @@ test('check-feeds run(): stores the first copy, then pushes only to touched stre
     assert.ok(blobs.has('sub/elm'), 'untouched subscriber kept');
   } finally { global.fetch = realFetch; }
 });
+
+test('geocode: parseNearest builds an address line from the BC Geocoder response', async () => {
+  const G = await import('../netlify/functions/lib/geocode.mjs');
+  const hit = G.parseNearest({ type: 'Feature', properties: { fullAddress: '13450 104 Ave, Surrey, BC', civicNumber: 13450, streetName: '104', streetType: 'Ave', streetDirection: '', localityName: 'Surrey', distance: 12.5 } });
+  assert.deepEqual([hit.address, hit.locality, hit.distance], ['13450 104 Ave', 'Surrey', 12.5]);
+  const noNumber = G.parseNearest({ properties: { fullAddress: 'Adams Rd, Bowen Island, BC', streetName: 'Adams', streetType: 'Rd', localityName: 'Bowen Island' } });
+  assert.equal(noNumber.address, 'Adams Rd');
+  assert.equal(G.parseNearest({ properties: {} }), null);
+  assert.ok(G.inBC(49.37, -123.37) && !G.inBC(45, -75));
+  const calls = [];
+  const fake = async (url, opts) => { calls.push([url, opts.headers.apikey]); return { ok: true, json: async () => ({ properties: { civicNumber: 1, streetName: 'Adams', streetType: 'Rd', localityName: 'Bowen Island' } }) }; };
+  const r = await G.nearestAddress(49.37, -123.37, 'KEY', fake);
+  assert.equal(r.address, '1 Adams Rd');
+  assert.ok(calls[0][0].includes('point=-123.37%2C49.37'), 'longitude first');
+  assert.equal(calls[0][1], 'KEY');
+});

@@ -32,13 +32,17 @@ See "Push alerts" below and `docs/push-alerts.md` for the design.
 The site itself is plain HTML, CSS and JavaScript in `public/` with no build step. The two dependencies
 (`web-push`, `@netlify/blobs`) are only used by the Netlify functions.
 
-## Municipality guess
+## Use my location
 
-On a first visit with no saved address, the page asks for the device's location once and picks the
-nearest municipality from `public/munis.json` (centroids for every name the feeds use, built by
-`npm run geocode` from OpenStreetMap's Nominatim; nothing is looked up at runtime). It falls back to
-Bowen Island, never overrides a saved address or a typed or linked municipality, and does not ask
-again after a refusal. "Use my location" under the form re-runs the guess on demand.
+Location is only ever read when the visitor presses "Use my location" under the form; the page never
+asks on its own. The nearest municipality is picked from `public/munis.json` (centroids for every
+name the feeds use, built by `npm run geocode` from OpenStreetMap's Nominatim; nothing is looked up
+at runtime for that step). When the deploy has a `BC_GEOCODER_KEY` (a free key from the BC
+government's API Services Portal, https://api.gov.bc.ca/devportal/api-directory, "Address
+Geocoder"), the coordinates are also sent to `netlify/functions/locate.mjs`, which asks the BC
+Address Geocoder for the nearest civic address and fills the form for the visitor to check and
+save. Without the key the build leaves the `geocoder` meta tag empty and the page never calls it.
+A saved address is never changed by either step.
 
 ## Browser storage
 
@@ -51,7 +55,6 @@ when alerts are turned on, the street name and municipality (see "Push alerts").
 | `outage-finder.snapshot` | matches seen on the last visit, used to detect changes |
 | `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
 | `outage-finder.alerts` | street, municipality and push endpoint registered for alerts |
-| `outage-finder.geo` | `declined` once the location prompt was refused |
 
 The address and snapshot are also mirrored into IndexedDB (database `outage`, store `kv`) because
 the service worker cannot read localStorage.
