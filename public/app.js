@@ -14,8 +14,9 @@
   const $ = (sel) => document.querySelector(sel);
   const els = {
     header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
-    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'),
+    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'),
   };
+  const INSTALL_KEY = 'outage-finder.install-dismissed';
 
   const HOME_KEY = 'outage-finder.home';
   const SNAP_KEY = 'outage-finder.snapshot';
@@ -27,7 +28,7 @@
   const state = {
     outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
     home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], showSearch: false,
-    alertsBusy: false, alertsMsg: '',
+    alertsBusy: false, alertsMsg: '', alertsExplain: false, showMore: false, installPrompt: null, installExplain: false,
     current: [], currentError: '',
   };
 
@@ -56,6 +57,7 @@
     } finally {
       state.loading = false;
       render();
+      document.documentElement.removeAttribute('data-boot');
       if (A && state.home && !state.error) { A.mirror('home', state.home); A.sync(state.home, state.munis); }
     }
   }
@@ -299,7 +301,6 @@
     const listed = planned.filter((i) => i.match.numberListed === true).length;
     let summary = '';
     if (out.length) summary += `<strong class="danger">An unplanned outage is affecting ${whose} street right now.</strong> `;
-    else if (matches.nearby.length) summary += `${matches.nearby.length} unplanned outage${matches.nearby.length === 1 ? '' : 's'} elsewhere in ${esc(muni || matches.q.muni)} right now, none listing ${whose} street. `;
     if (!n) summary += `No planned outage lists ${whose} street.`;
     else if (listed) summary += `<strong>${listed}</strong> planned outage${listed === 1 ? '' : 's'} list${listed === 1 ? 's' : ''} ${whose} address${n > listed ? `, and ${n - listed} more list${n - listed === 1 ? 's' : ''} ${whose} street` : ''}.`;
     else {
@@ -308,6 +309,7 @@
       summary += `<strong>${n}</strong> planned outage${n === 1 ? '' : 's'} list${n === 1 ? 's' : ''} ${whose} street${matches.q.number && excluded ? `, but not ${whose} house number` : ''}.`;
     }
     if (matches.weak.length) summary += ` ${matches.weak.length} similar street name${matches.weak.length === 1 ? '' : 's'} shown below.`;
+    if (!out.length && matches.nearby.length) summary += ` ${matches.nearby.length} unplanned outage${matches.nearby.length === 1 ? '' : 's'} elsewhere in ${esc(muni || matches.q.muni)}.`;
     return summary;
   }
 
@@ -322,13 +324,15 @@
         return `<li><span class="danger"><b>Unplanned outage</b> out since ${esc(fmtDateTime(o.dateOff))}${restore}</span>${tag}<br>${where}</li>`;
       }
       const st = statusOf(o, now);
-      let when = `<b>${esc(fmtWindow(o.dateOff, o.dateOn))}</b> (${esc(fmtDuration(o.dateOn - o.dateOff))})`;
-      if (st === 'upcoming') when += `, starts ${esc(fmtRelative(o.dateOff - now))}`;
-      else if (st === 'in progress') when += `, <span class="danger">in progress now</span>`;
-      else if (st === 'cancelled') when = `<s>${when}</s> cancelled`;
-      else when += ', finished';
-      const note = o.parsed.notes.length ? ` <span class="muted">· ${esc(o.parsed.notes[0])}</span>` : '';
-      return `<li>${when}${tag}<br>${where}${note}</li>`;
+      let when = `<b>${esc(fmtWindow(o.dateOff, o.dateOn))}</b>`;
+      let sub = esc(fmtDuration(o.dateOn - o.dateOff));
+      if (st === 'upcoming') sub += ` · starts ${esc(fmtRelative(o.dateOff - now))}`;
+      else if (st === 'in progress') sub += ` · <span class="danger">in progress now</span>`;
+      else if (st === 'cancelled') { when = `<s>${when}</s>`; sub += ' · cancelled'; }
+      else sub += ' · finished';
+      // Short notes ("Rescheduled from Oct 6") are worth a line; long boilerplate is on the card below.
+      const note = o.parsed.notes.length && o.parsed.notes[0].length <= 60 ? ` · ${esc(o.parsed.notes[0])}` : '';
+      return `<li>${when}${tag}<span class="sub">${sub}</span><span class="sub">${where}${note}</span></li>`;
     });
     return `<ul class="upcoming">${rows.join('')}</ul>`;
   }
@@ -365,18 +369,20 @@
     const base = state.baseline;
     if (d && base && base.items) {
       const lines = diffLines(d).map(esc);
-      const since = base.first ? `since you saved this address (${esc(fmtDateTime(base.at))})` : `since your last visit (${esc(fmtDateTime(base.at))})`;
+      const since = `since ${esc(fmtDateTime(base.at))}`;
       if (lines.length) changes = `<div class="changes"><strong>${lines.length} change${lines.length === 1 ? '' : 's'} ${since}:</strong><ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul></div>`;
       else if (!base.first) changes = `<p class="hint">No changes ${since}.</p>`;
     }
 
+    const more = `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>`;
     setHTML(els.home, `<div class="home-card">
-  <h2 class="home-title">Outage information for ${addr}</h2>
+  <h2 class="home-title">Outages for ${addr}</h2>
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
   ${changes}
   ${alertsControl()}
   <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-forget">Clear my address and history</a></p>
+  ${more}
 </div>`);
   }
 
@@ -386,10 +392,21 @@
     const st = A.status();
     let html;
     if (st === 'blocked') html = `<span class="muted">Alerts are blocked for this site in your browser's notification settings.</span>`;
-    else if (st === 'on') html = `<span class="alerts-on">Alerts on</span> <span class="muted">You get a notification when an outage listing your street changes.</span> <a href="#" id="home-alerts-off">Turn off alerts</a>`;
+    else if (st === 'on') html = `<span class="alerts-on">Alerts on</span> <span class="muted">·</span> <a href="#" id="home-alerts-off">Turn off</a>`;
     else if (A.needsInstall()) html = `<span class="muted">For alerts on iPhone or iPad, add this page to your Home Screen (Share, then Add to Home Screen) and open it from there.</span>`;
     else if (state.alertsBusy) html = `<span class="muted">Turning on alerts…</span>`;
-    else html = `<a href="#" id="home-alerts-on">Alert me when this changes</a> <span class="muted">Sends your street name to the server, not your house number.</span>`;
+    else if (state.alertsExplain) {
+      const limits = [
+        'We check BC Hydro once an hour, so an alert can be up to an hour behind their website.',
+        'You get an alert when an outage that lists your street is added, changed, cancelled or removed.',
+        'BC Hydro sometimes lists a whole street, so an alert does not always mean your house is affected. Open the page to see the details.',
+        'Your street name and town are kept on our server so we know what to send you. Your house number stays on this device.',
+        'Alerts need notifications allowed for this site in your browser.' + (/android/i.test(navigator.userAgent) ? ' Battery saver settings can delay them.' : ''),
+        'This is not BC Hydro. For anything important, check bchydro.com too.',
+      ];
+      html = `<div class="explain"><b>Before you turn on alerts</b><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul><span class="actions"><button type="button" class="btn small primary" id="home-alerts-go">Turn on alerts</button> <button type="button" class="btn link small" id="home-alerts-cancel">Cancel</button></span></div>`;
+    }
+    else html = `<a href="#" id="home-alerts-on">Get alerts when this changes</a>`;
     const msg = state.alertsMsg ? ` <span class="alerts-msg">${esc(state.alertsMsg)}</span>` : '';
     return `<p class="home-alerts">${html}${msg}</p>`;
   }
@@ -406,9 +423,11 @@
     let home = null;
     if (state.home) { home = homeMatches(now); updateHomeSnapshot(home, now); }
     renderHome(home, now);
+    renderInstall();
+    const atHome = queryIsHome();
+    if (atHome && !state.showSearch && !state.showMore) { setHTML(els.results, ''); setHTML(els.status, ''); return; }
     const r = search();
     if (r.mode === 'overview') return renderOverview();
-    const atHome = queryIsHome();
     const tags = atHome && state.diff ? state.diff.byId : {};
     const parts = [];
     if (r.mode === 'address') {
@@ -433,6 +452,34 @@
     setHTML(els.results, parts.join(''));
     if (atHome) setHTML(els.status, '');
     else summary(r);
+  }
+
+  /** Offer to install the page as an app where that is possible and not yet done. */
+  function renderInstall() {
+    let html = '';
+    let dismissed = false;
+    try { dismissed = !!localStorage.getItem(INSTALL_KEY); } catch (e) { /* ignore */ }
+    const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+    const ios = A && A.needsInstall();
+    if (!dismissed && !standalone && (state.installPrompt || ios)) {
+      const notNow = `<button type="button" class="btn link small" id="install-no">Not now</button>`;
+      if (!state.installExplain) {
+        html = `<span>Add this page to your home screen to get outage alerts on this device.</span><span class="actions"><button type="button" class="btn small primary" id="install-ask">${ios ? 'How' : 'Install'}</button> ${notNow}</span>`;
+      } else {
+        const android = /android/i.test(navigator.userAgent);
+        const limits = [
+          'This is a shortcut to this website, not an app from the app store. It opens full screen and can show alerts.',
+          'It only knows what BC Hydro publishes. If BC Hydro leaves your street off the list, there is no alert.',
+        ];
+        if (ios) limits.push('On iPhone and iPad, alerts only work when you open the page from the home screen icon, not from Safari.', 'If you do not open it for a few weeks, iPhone may stop the alerts. Opening it again turns them back on.');
+        else if (android) limits.push('Alerts come through ' + (/samsungbrowser/i.test(navigator.userAgent) ? 'Samsung Internet' : /firefox/i.test(navigator.userAgent) ? 'Firefox' : 'Chrome') + ', so that browser must stay installed and allowed to show notifications.', 'Battery saver settings can delay alerts by a few hours.');
+        else limits.push('Alerts come through this browser, so it must stay installed and allowed to show notifications.');
+        const steps = ios ? `<p><b>How:</b> tap the Share button, choose <b>Add to Home Screen</b>, then open Planned outrage from the new icon and turn alerts on there.</p>` : '';
+        html = `<div class="explain"><b>Before you add it</b><ul>${limits.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>${steps}<span class="actions">${ios ? `<button type="button" class="btn small primary" id="install-no">Got it</button>` : `<button type="button" class="btn small primary" id="install-go">Install now</button> ${notNow}`}</span></div>`;
+      }
+    }
+    setHTML(els.install, html);
+    if (els.install.hidden !== !html) els.install.hidden = !html;
   }
 
   function summary(r) {
@@ -687,9 +734,10 @@
       state.showSearch = true; state.query = ''; els.q.value = ''; state.muni = state.home.muni || DEFAULT_MUNI; els.muni.value = state.muni;
       writeState(); render(); els.q.focus();
     }
-    else if (id === 'home-alerts-on') {
-      e.preventDefault();
-      state.alertsBusy = true; state.alertsMsg = ''; render();
+    else if (id === 'home-alerts-on') { e.preventDefault(); state.alertsExplain = true; state.alertsMsg = ''; render(); }
+    else if (id === 'home-alerts-cancel') { state.alertsExplain = false; render(); }
+    else if (id === 'home-alerts-go') {
+      state.alertsExplain = false; state.alertsBusy = true; state.alertsMsg = ''; render();
       A.enable(state.home, state.munis)
         .then(() => { state.alertsMsg = ''; })
         .catch((err) => { state.alertsMsg = err && err.message ? err.message : 'Could not turn on alerts.'; })
@@ -701,9 +749,25 @@
       A.disable().then(() => render());
       render();
     }
+    else if (id === 'home-more') {
+      state.showMore = !state.showMore; render();
+      if (state.showMore) els.results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     else if (id === 'home-show') { e.preventDefault(); state.showSearch = false; state.query = state.home.address; els.q.value = state.query; state.muni = state.home.muni || ''; els.muni.value = state.muni; writeState(); render(); }
   });
   window.addEventListener('popstate', () => { readState(); render(); });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; renderInstall(); });
+  window.addEventListener('appinstalled', () => { state.installPrompt = null; renderInstall(); });
+  els.install.addEventListener('click', async (e) => {
+    const id = e.target.id;
+    if (id === 'install-no') { try { localStorage.setItem(INSTALL_KEY, '1'); } catch (err) { /* ignore */ } state.installExplain = false; renderInstall(); }
+    else if (id === 'install-ask') { state.installExplain = true; renderInstall(); }
+    else if (id === 'install-go' && state.installPrompt) {
+      const p = state.installPrompt; state.installPrompt = null; state.installExplain = false; renderInstall();
+      try { p.prompt(); await p.userChoice; } catch (err) { /* dismissed */ }
+      renderInstall();
+    }
+  });
 
   readState();
   load();
