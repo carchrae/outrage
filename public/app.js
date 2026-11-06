@@ -481,11 +481,13 @@
       else if (!base.first) changes = `<p class="hint">No changes ${since}.</p>`;
     }
 
+    const headline = panelTitle(matches, now);
+    if (document.title !== headline.title) document.title = headline.title;
     const more = `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>`;
     const button = titleButton();
     const install = button ? `<span class="install">${button}</span>` : '';
     setHTML(els.home, `<div class="home-card">
-  <div class="title-row"><div><h2 class="home-title">Outage at</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
+  <div class="title-row"><div><h2 class="home-title ${headline.cls}">${headline.text}</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
   <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-forget">Clear my address and history</a></p>
   ${liveStatus(matches, now)}
   <p class="home-summary">${summary}</p>
@@ -495,6 +497,15 @@
   ${more}
 </div>
 ${state.showMore ? '' : nearbyBox(matches, now)}`);
+  }
+
+  /** What the panel heading says: the state of the saved street in two words. */
+  function panelTitle(matches, now) {
+    const strong = matches.strong;
+    if (strong.some((i) => i.o.kind === 'current')) return { text: 'Power out', cls: 'is-out', title: 'Power out · Outage' };
+    if (strong.some((i) => statusOf(i.o, now) === 'in progress')) return { text: 'Planned outage now', cls: 'is-planned', title: 'Planned outage now · Outage' };
+    if (strong.some((i) => statusOf(i.o, now) === 'upcoming')) return { text: 'Planned outage', cls: 'is-planned', title: 'Planned outage · Outage' };
+    return { text: 'No outage', cls: 'is-clear', title: 'No outage · Outage' };
   }
 
   /** The push-alert toggle for the saved address. Empty when the browser or the deploy cannot do push. */

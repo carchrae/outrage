@@ -143,6 +143,9 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .home-card { border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); border-radius: 0; padding: 14px 12px; }
 .home-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
 .home-card .home-title { margin: 0; font-size: 1.25rem; font-weight: 700; }
+.home-card .home-title.is-out { color: var(--danger); }
+.home-card .home-title.is-planned { color: var(--warn); }
+.home-card .home-title.is-clear { color: var(--hit); }
 .home-card .home-subtitle { margin: 2px 0 0; }
 .home-card .title-row + .home-actions { margin: 4px 0 10px; }
 .home-card .addr { font-size: 1.05rem; font-weight: 500; }
