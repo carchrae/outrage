@@ -56,7 +56,7 @@ export async function run({ store, send, log = console.log, now = Date.now() }) 
   // When the unplanned feed failed this run, do not report every unplanned outage as removed.
   const prevOutages = current ? prev.outages : prev.outages.filter((o) => o.kind !== 'current');
   const changed = diffFeeds(prevOutages, next.outages);
-  if (!changed.length) { log(`no changes on ${next.cores.length} subscribed streets`); return { changed: 0, pushed: 0 }; }
+  if (!changed.length) { log(`no changes for ${next.cores.length} subscribed streets and municipalities`); return { changed: 0, pushed: 0 }; }
 
   const hits = pickSubscribers(subs, changed, munis, new Set(prev.cores || []));
   log(`${changed.length} changed outages, ${subs.length} subscribers, ${hits.size} to notify`);

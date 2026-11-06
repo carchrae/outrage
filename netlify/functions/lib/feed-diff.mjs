@@ -68,10 +68,17 @@ export function normaliseSubscription(body) {
   if (!sub || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || sub.endpoint.length > 2048) return null;
   if (!sub.keys || typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') return null;
   const street = P.streetKey(String(body.street || '').slice(0, 120));
-  if (!street || /^\d+$/.test(street)) return null;
   const muni = String(body.muni || '').trim().toLowerCase().slice(0, 80);
-  return { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, street, core: P.coreKey(street), muni };
+  // Topics: 'street' (outages listing the street) and/or 'muni' (every outage in the municipality). Default: street.
+  const asked = Array.isArray(body.topics) ? body.topics.filter((t) => t === 'street' || t === 'muni') : ['street'];
+  const topics = [...new Set(asked)].filter((t) => (t === 'street' ? street && !/^\d+$/.test(street) : !!muni));
+  if (!topics.length) return null;
+  return { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth }, street, core: street ? P.coreKey(street) : '', muni, topics };
 }
+
+const wantsStreet = (sub) => !sub.topics || sub.topics.includes('street');
+const wantsMuni = (sub) => !!sub.topics && sub.topics.includes('muni');
+const muniOf = (o) => (o.municipality || '').toLowerCase();
 
 function muniMatches(subMuni, o, street) {
   if (!subMuni) return true;
@@ -85,9 +92,13 @@ function muniMatches(subMuni, o, street) {
  * @returns {{outages: object[], cores: string[]}} the pruned list and the street cores it covers
  */
 export function pruneToSubscribers(outages, subs, munis) {
-  const cores = new Set(subs.map((s) => s.core));
-  const kept = outages.filter((o) => streetsOf(o, munis).some((st) => cores.has(st.core)));
-  return { outages: kept, cores: [...cores].sort() };
+  const cores = new Set(subs.filter(wantsStreet).map((s) => s.core).filter(Boolean));
+  const towns = new Set(subs.filter(wantsMuni).map((s) => s.muni).filter(Boolean));
+  const inTown = (o) => [...towns].some((t) => muniOf(o).includes(t));
+  const kept = outages.filter((o) => inTown(o) || streetsOf(o, munis).some((st) => cores.has(st.core)));
+  // Keys the copy covers: a subscriber whose key is new since the last run has no baseline yet.
+  const keys = [...cores].map((c) => 'street:' + c).concat([...towns].map((t) => 'muni:' + t)).sort();
+  return { outages: kept, cores: keys };
 }
 
 /**
@@ -98,27 +109,43 @@ export function pruneToSubscribers(outages, subs, munis) {
  * @param {Set<string>} [knownCores] street cores the previous copy covered; subscribers outside it are skipped
  * @returns {Map<string, {sub:object, ids:number[], kinds:Set<string>}>}
  */
-export function pickSubscribers(subs, changed, munis, knownCores) {
+export function pickSubscribers(subs, changed, munis, knownKeys) {
   const hits = new Map();
   if (!subs.length || !changed.length) return hits;
+  // A key that was not in the previous copy has no baseline yet: its outages only look "added".
+  const known = (k) => !knownKeys || knownKeys.has(k) || knownKeys.has(k.replace(/^street:/, '')); // older copies stored bare cores
   const byCore = new Map();
+  const byTown = [];
   for (const sub of subs) {
-    // A street that was not in the previous copy has no baseline yet: its outages only look "added".
-    if (knownCores && !knownCores.has(sub.core)) continue;
-    if (!byCore.has(sub.core)) byCore.set(sub.core, []);
-    byCore.get(sub.core).push(sub);
-  }
-  for (const o of changed) {
-    for (const street of streetsOf(o, munis)) {
-      for (const sub of byCore.get(street.core) || []) {
-        if (!muniMatches(sub.muni, o, street)) continue;
-        if (!hits.has(sub.id)) hits.set(sub.id, { sub, ids: [], kinds: new Set(), outages: [], street: street.street });
-        const h = hits.get(sub.id);
-        if (!h.ids.includes(o.id)) { h.ids.push(o.id); h.kinds.add(o.kind); h.outages.push(o); }
-      }
+    if (wantsStreet(sub) && sub.core && known('street:' + sub.core)) {
+      if (!byCore.has(sub.core)) byCore.set(sub.core, []);
+      byCore.get(sub.core).push(sub);
     }
+    if (wantsMuni(sub) && sub.muni && known('muni:' + sub.muni)) byTown.push(sub);
+  }
+  const add = (sub, o, street, via) => {
+    if (!hits.has(sub.id)) hits.set(sub.id, { sub, ids: [], kinds: new Set(), outages: [], street: street ? street.street : '' });
+    const h = hits.get(sub.id);
+    if (h.ids.includes(o.id)) return;
+    h.ids.push(o.id); h.kinds.add(o.kind);
+    h.outages.push({ ...o, via, label: street ? street.street : firstStreet(o, munis) });
+    if (via === 'street' && !h.street) h.street = street.street;
+  };
+  for (const o of changed) {
+    const streets = streetsOf(o, munis);
+    for (const street of streets) {
+      for (const sub of byCore.get(street.core) || []) if (muniMatches(sub.muni, o, street)) add(sub, o, street, 'street');
+    }
+    for (const sub of byTown) if (muniOf(o).includes(sub.muni) || streets.some((st) => st.locality.includes(sub.muni))) add(sub, o, null, 'muni');
   }
   return hits;
+}
+
+function firstStreet(o, munis) {
+  const parsed = P.parseArea(o.area, munis);
+  const seg = parsed.segments.find((s) => s.street);
+  if (seg) return seg.label + (parsed.segments.length > 1 ? ` +${parsed.segments.length - 1}` : '');
+  return parsed.text.slice(0, 40) || o.municipality;
 }
 
 // ---------------------------------------------------------------- notification text
@@ -157,9 +184,13 @@ export function describeChange(o) {
 
 /** Title and body for one subscriber's push: the street and municipality, then up to four lines. */
 export function notificationFor(hit) {
-  const street = titleCase(hit.street || hit.sub.street);
   const muni = hit.outages[0] && hit.outages[0].municipality ? hit.outages[0].municipality : titleCase(hit.sub.muni);
-  const lines = hit.outages.map(describeChange);
+  const onStreet = hit.outages.some((o) => o.via !== 'muni');
+  const street = titleCase(hit.street || hit.sub.street);
+  const title = onStreet ? (muni ? `${street}, ${muni}` : street) : muni;
+  // Street alerts first; municipality-wide ones name the street they are about.
+  const ordered = hit.outages.slice().sort((a, b) => (a.via === 'muni') - (b.via === 'muni'));
+  const lines = ordered.map((o) => (o.via === 'muni' ? `${titleCase(o.label)}: ${describeChange(o)}` : describeChange(o)));
   const body = lines.slice(0, 4).join('\n') + (lines.length > 4 ? `\n+${lines.length - 4} more` : '');
-  return { title: muni ? `${street}, ${muni}` : street, body };
+  return { title, body };
 }

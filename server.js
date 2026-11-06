@@ -60,9 +60,9 @@ http.createServer(async (req, res) => {
     let data = {};
     try { data = JSON.parse(body || '{}'); } catch (e) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end('{"error":"bad json"}'); }
     if (req.method === 'POST' && data.subscription && data.subscription.endpoint) {
-      subs.set(data.subscription.endpoint, { street: data.street, muni: data.muni });
-      console.log(`subscribe: ${data.street} | ${data.muni} (${subs.size} total)`);
-      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, street: data.street, muni: data.muni }));
+      subs.set(data.subscription.endpoint, { street: data.street, muni: data.muni, topics: data.topics });
+      console.log(`subscribe: ${data.street} | ${data.muni} | ${(data.topics || ['street']).join('+')} (${subs.size} total)`);
+      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, street: data.street, muni: data.muni, topics: data.topics || ['street'] }));
     }
     if (req.method === 'DELETE' && data.endpoint) {
       subs.delete(data.endpoint);

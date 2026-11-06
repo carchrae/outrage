@@ -54,7 +54,7 @@ when alerts are turned on, the street name and municipality (see "Push alerts").
 | `outage-finder.home` | saved address and municipality |
 | `outage-finder.snapshot` | matches seen on the last visit, used to detect changes |
 | `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
-| `outage-finder.alerts` | street, municipality and push endpoint registered for alerts |
+| `outage-finder.alerts` | street, municipality, topics and push endpoint registered for alerts |
 
 
 The "since your last visit" baseline is pinned in sessionStorage so a reload does not clear the
@@ -84,21 +84,25 @@ Netlify, or run `netlify deploy --prod` from this directory.
 
 ## Push alerts
 
-Turning alerts on asks for notification permission, subscribes the browser to push, and sends the
-server the normalised street name and municipality (for example `adams rd` and `bowen island`) with
-the push subscription. The house number, unit, snapshot and history never leave the browser.
+The bell on the saved-address panel opens a dialog with two options and their state: alerts for
+the street (outages that list it) and alerts for the whole municipality (every outage there,
+planned or unplanned). Turning either on asks for notification permission, subscribes the browser
+to push, and sends the server the normalised street name, municipality and chosen topics (for
+example `adams rd`, `bowen island`, `["street"]`) with the push subscription. The house number,
+unit, snapshot and history never leave the browser. Unticking both turns alerts off.
 
 - `netlify/functions/subscribe.mjs` serves `POST` and `DELETE /api/subscribe` and keeps one record
-  per push endpoint in Netlify Blobs (store `push`).
+  per push endpoint in Netlify Blobs (store `push`), including its topics.
 - `netlify/functions/check-feeds.mjs` runs every 10 minutes. It fetches both feeds, keeps only the outages
-  that list a subscribed street, diffs that against the copy from the previous run, and pushes to
-  the subscriptions on the streets that changed. The payload is just outage ids. The stored copy
+  that list a subscribed street or sit in a subscribed municipality, diffs that against the copy
+  from the previous run, and pushes to the subscriptions they touch. The payload is just outage ids. The stored copy
   records which streets it covers, so a street subscribed since the last run gets its baseline
   first and no spurious "new outage" alert. A 404 or 410 from the push service, or three failures
   in a row, deletes the record.
 - The push carries the notification itself: a title such as "Adams Rd, Bowen Island" and one
   plain line per change ("Power out: unplanned outage, crew assigned, 73 customers", "Time
-  changed: planned outage now Sat, Nov 7 8:00 a.m. – 4:00 p.m."). It is street level, since the
+  changed: planned outage now Sat, Nov 7 8:00 a.m. – 4:00 p.m."). Municipality-wide alerts are
+  titled with the municipality and each line starts with the street it is about. It is street level, since the
   server never knows a house number. `public/sw.js` just shows it; clicking opens the site, which
   works out the exact changes for the saved address.
 - Subscriptions are re-sent on every visit when the street changed or the record is a week old, and

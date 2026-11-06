@@ -600,18 +600,14 @@ ${state.showMore ? '' : nearbyBox(matches, now)}`);
     if (!bellShown()) return '';
     const st = A.status();
     const on = st === 'on';
-    const label = on ? 'Alerts on' : st === 'blocked' ? 'Alerts blocked' : 'Alerts off';
+    const tp = on ? A.topics() : [];
+    const label = on ? (tp.includes('muni') ? (tp.includes('street') ? 'Alerts: street + town' : 'Alerts: town') : 'Alerts on') : st === 'blocked' ? 'Alerts blocked' : 'Alerts off';
     return `<button type="button" class="btn small bell${on ? ' on' : ''}" id="alerts-toggle" aria-pressed="${on}" title="${on ? 'Turn alerts off' : 'Turn alerts on'}">${on ? BELL_ON : BELL_OFF}<span>${label}</span></button>`;
   }
 
   /** The bell was pressed: turn alerts off, or open the dialog that turns them on. */
-  function toggleAlerts() {
-    const st = A.status();
-    state.alertsMsg = '';
-    if (st === 'on') { A.disable().then(() => render()); render(); }
-    else if (st === 'blocked') { state.alertsMsg = 'Notifications are blocked for this site in your browser settings. Allow them there, then try again.'; render(); }
-    else alertsDialog();
-  }
+  /** The bell always opens the options dialog; turning everything off there is what disables alerts. */
+  function toggleAlerts() { state.alertsMsg = ''; alertsDialog(); }
 
   function installable() {
     const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
@@ -677,10 +673,26 @@ ${state.showMore ? '' : nearbyBox(matches, now)}`);
 ${list(facts)}<div class="actions"><button type="button" class="btn small primary" id="dialog-close">Got it</button></div>`);
   }
 
-  /** The alert limitations for this device, before turning alerts on. */
+  /** The alert options for the saved address, with what is currently on, and the limitations for this device. */
   function alertsDialog(intro) {
     const d = device();
-    openDialog(`<h3>Get outage alerts</h3>${intro ? `<p>${intro}</p>` : ''}${list(alertFacts(d))}<div class="actions"><button type="button" class="btn link small" id="dialog-close">Cancel</button> <button type="button" class="btn small primary" id="home-alerts-go">Turn on alerts</button></div>`);
+    const on = A.topics();
+    const first = !on.length;
+    const q = P.parseQuery(state.home.address, state.munis);
+    const street = q.street || state.home.address;
+    const muni = state.home.muni || q.muni || '';
+    const st = A.status();
+    const blocked = st === 'blocked';
+    const row = (key, label, detail, checked, disabled) => `<label class="opt${disabled ? ' off' : ''}"><input type="checkbox" name="topic" value="${key}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}><span><b>${label}</b> <span class="muted">${detail}</span><span class="state">${checked ? 'on' : 'off'}</span></span></label>`;
+    const options = `<div class="opts">
+${row('street', esc(street), 'outages that list your street', first ? true : on.includes('street'), blocked)}
+${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every outage in ' + esc(muni) + ', planned or unplanned' : 'add a municipality to your address to use this', first ? false : on.includes('muni'), blocked || !muni)}
+</div>`;
+    const note = blocked ? `<p class="alerts-msg">Notifications are blocked for this site in your browser settings. Allow them there, then come back.</p>` : '';
+    const actions = blocked
+      ? `<div class="actions"><button type="button" class="btn small primary" id="dialog-close">OK</button></div>`
+      : `<div class="actions"><button type="button" class="btn link small" id="dialog-close">Cancel</button> <button type="button" class="btn small primary" id="home-alerts-go">${first ? 'Turn on alerts' : 'Save'}</button></div>`;
+    openDialog(`<h3>Outage alerts</h3>${intro ? `<p>${intro}</p>` : ''}${options}${note}<details class="limits"${first ? ' open' : ''}><summary>What to expect</summary>${list(alertFacts(d))}</details>${actions}`);
   }
 
   const ASKED_KEY = 'outage-finder.alerts-offered';
@@ -787,7 +799,7 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
 <article class="card${hitClass}${st === 'cancelled' ? ' cancelled' : ''}" id="o-${o.id}">
   <div class="card-top">${badges.join('')}</div>
   <h3 class="when">${fmtWindow(o.dateOff, o.dateOn)} <span class="dur">(${fmtDuration(o.dateOn - o.dateOff)})</span></h3>
-  <p class="meta"><b>${esc(o.municipality)}</b> · ${esc(o.regionName)} · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Planned work')}</p>
+  <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Planned work')}</p>
   ${o.parsed.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}
   ${segs}
   <details class="raw"><summary>Original area text from BC Hydro</summary><pre>${esc(o.parsed.text)}</pre></details>
@@ -814,7 +826,7 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
 <article class="card current${m && m.streetScore >= 2 && !m.segment.boundary ? ' hit' : ''}" id="o-${o.id}">
   <div class="card-top">${badges.join('')}</div>
   <h3 class="when">Out since ${esc(fmtDateTime(o.dateOff))} <span class="dur">(${dur} so far)</span></h3>
-  <p class="meta"><b>${esc(o.municipality)}</b> · ${esc(o.regionName)} · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Cause not yet known')}</p>
+  <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Cause not yet known')}</p>
   <p class="meta">${restore}${eta}${o.crewStatusNote ? ' · ' + esc(o.crewStatusNote) : ''}</p>
   ${segs}
   <p class="card-foot"><span>Outage #${o.id}</span><span>Updated ${fmtDateTime(o.lastUpdated)}</span><a href="${MAP}${o.id}" rel="noopener" target="_blank">View on map</a><a href="${OFFICIAL_CURRENT}#current-${o.regionId}" rel="noopener" target="_blank">bchydro.com</a></p>
@@ -1018,11 +1030,12 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
     const id = e.target.id;
     if (id === 'dialog-close') closeDialog();
     else if (id === 'home-alerts-go') {
+      const wanted = [...els.dialog.querySelectorAll('input[name="topic"]:checked')].map((i) => i.value);
       closeDialog();
       state.alertsBusy = true; state.alertsMsg = ''; render();
-      A.enable(state.home, state.munis)
-        .then(() => { state.alertsMsg = ''; })
-        .catch((err) => { state.alertsMsg = err && err.message ? err.message : 'Could not turn on alerts.'; })
+      const action = wanted.length ? A.enable(state.home, state.munis, wanted) : A.disable().then(() => { state.alertsMsg = 'Alerts off.'; });
+      action
+        .catch((err) => { state.alertsMsg = err && err.message ? err.message : 'Could not update alerts.'; })
         .then(() => { state.alertsBusy = false; render(); });
     }
   });

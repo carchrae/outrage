@@ -1,5 +1,6 @@
 /*
- * POST   /api/subscribe  { subscription, street, muni }  -> stores the push subscription for a street
+ * POST   /api/subscribe  { subscription, street, muni, topics }  -> stores the push subscription
+ *        topics: ['street'] (outages listing the street), ['muni'] (every outage in the municipality), or both
  * DELETE /api/subscribe  { endpoint }                    -> forgets it
  *
  * Records live in Netlify Blobs (store "push", key "sub/<sha256 of endpoint>"). The server never
@@ -21,11 +22,11 @@ export default async (req) => {
 
   if (req.method === 'POST') {
     const rec = normaliseSubscription(body);
-    if (!rec) return json(400, { error: 'Expected { subscription: {endpoint, keys}, street, muni }' });
+    if (!rec) return json(400, { error: 'Expected { subscription: {endpoint, keys}, street, muni, topics }' });
     const id = idFor(rec.endpoint);
     const prev = await store.get(id, { type: 'json' }).catch(() => null);
     await store.setJSON(id, { ...rec, createdAt: (prev && prev.createdAt) || Date.now(), updatedAt: Date.now(), failures: 0 });
-    return json(200, { ok: true, street: rec.street, muni: rec.muni });
+    return json(200, { ok: true, street: rec.street, muni: rec.muni, topics: rec.topics });
   }
 
   if (req.method === 'DELETE') {

@@ -59,16 +59,22 @@
     return { street: q.key, muni: (home.muni || q.muni || '').trim() };
   }
 
-  /** Tell the server which street this subscription cares about. Replaces any earlier record for the endpoint. */
-  async function post(sub, home, munis) {
+  const TOPICS = ['street', 'muni'];
+  function cleanTopics(list) { return TOPICS.filter((t) => (list || []).includes(t)); }
+  /** Which alerts are on: 'street' (outages listing the street), 'muni' (every outage in the municipality). */
+  function topics() { const f = readFlag(); return f ? cleanTopics(f.topics || ['street']) : []; }
+
+  /** Tell the server what this subscription cares about. Replaces any earlier record for the endpoint. */
+  async function post(sub, home, munis, wanted) {
     const { street, muni } = streetOf(home, munis);
-    if (!street) throw new Error('Alerts need a street name in the saved address.');
+    const list = cleanTopics(wanted).filter((t) => (t === 'street' ? !!street : !!muni));
+    if (!list.length) throw new Error(wanted && wanted.includes('muni') ? 'Alerts for a municipality need one in the saved address.' : 'Alerts need a street name in the saved address.');
     const res = await fetch('/api/subscribe', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ subscription: sub.toJSON(), street, muni }),
+      body: JSON.stringify({ subscription: sub.toJSON(), street, muni, topics: list }),
     });
     if (!res.ok) throw new Error('Could not register for alerts (HTTP ' + res.status + ').');
-    writeFlag({ street, muni, endpoint: sub.endpoint, at: Date.now() });
+    writeFlag({ street, muni, topics: list, endpoint: sub.endpoint, at: Date.now() });
   }
 
   async function subscribe(reg) {
@@ -77,15 +83,15 @@
     return sub;
   }
 
-  /** Ask for permission, subscribe, and register the street with the server. Throws with a readable message. */
-  async function enable(home, munis) {
+  /** Ask for permission, subscribe, and register the chosen topics with the server. Throws with a readable message. */
+  async function enable(home, munis, wanted) {
     if (!supported()) throw new Error('This browser does not support push alerts.');
     if (needsInstall()) throw new Error('On iPhone and iPad, add this page to your Home Screen first, then turn alerts on from there.');
     const perm = await Notification.requestPermission();
     if (perm !== 'granted') throw new Error(perm === 'denied' ? 'Notifications are blocked for this site in your browser settings.' : 'Notifications were not allowed.');
     const reg = await register();
     const sub = await subscribe(reg);
-    await post(sub, home, munis);
+    await post(sub, home, munis, wanted || ['street']);
   }
 
   /** Remove the server record and the browser subscription. Never throws. */
@@ -114,9 +120,9 @@
       const sub = await subscribe(reg);
       const flag = readFlag() || {};
       const { street, muni } = streetOf(home, munis);
-      if (flag.street !== street || flag.muni !== muni || flag.endpoint !== sub.endpoint || Date.now() - (flag.at || 0) > RESYNC_MS) await post(sub, home, munis);
+      if (flag.street !== street || flag.muni !== muni || flag.endpoint !== sub.endpoint || Date.now() - (flag.at || 0) > RESYNC_MS) await post(sub, home, munis, flag.topics || ['street']);
     } catch (e) { /* offline or server unavailable; try again next visit */ }
   }
 
-  window.OutageAlerts = { supported, status, needsInstall, isIOS, standalone, enable, disable, sync, register };
+  window.OutageAlerts = { supported, status, topics, needsInstall, isIOS, standalone, enable, disable, sync, register };
 })();

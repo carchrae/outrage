@@ -48,10 +48,11 @@ test('pruneToSubscribers keeps only outages on subscribed streets; new subscribe
   const subs = [{ ...L.normaliseSubscription(sub('https://p/1', 'adams rd', '')), id: 'a' }];
   const pruned = L.pruneToSubscribers(all, subs, munis);
   assert.deepEqual(pruned.outages.map((x) => x.id), [1]);
-  assert.deepEqual(pruned.cores, ['adams']);
+  assert.deepEqual(pruned.cores, ['street:adams']);
   const changed = [{ ...all[0], change: 'added' }];
   assert.equal(L.pickSubscribers(subs, changed, munis, new Set()).size, 0, 'street not in the previous copy');
-  assert.equal(L.pickSubscribers(subs, changed, munis, new Set(['adams'])).size, 1);
+  assert.equal(L.pickSubscribers(subs, changed, munis, new Set(['street:adams'])).size, 1);
+  assert.equal(L.pickSubscribers(subs, changed, munis, new Set(['adams'])).size, 1, 'copies from before the key prefix still count');
   assert.equal(L.pickSubscribers(subs, changed, munis).size, 1, 'no baseline set given: no filtering');
 });
 
@@ -79,7 +80,7 @@ test('check-feeds run(): stores the first copy, then pushes only to touched stre
     // The subscribers are new, so their outage now enters the copy; it is a change but not an alert.
     assert.deepEqual(await C.run({ store, send, log }), { changed: 1, pushed: 0, dropped: 0 });
     assert.deepEqual(blobs.get('feeds/last').outages.map((x) => x.id), [1]);
-    assert.deepEqual(blobs.get('feeds/last').cores, ['adams', 'elm']);
+    assert.deepEqual(blobs.get('feeds/last').cores, ['street:adams', 'street:elm']);
     assert.deepEqual(await C.run({ store, send, log }), { changed: 0, pushed: 0 });
     feeds.planned = planned([o(1, '1-9 Adams Rd', 'Bowen Island', { dateOff: 300, dateOn: 400 })]);
     const r = await C.run({ store, send, log });
@@ -125,4 +126,31 @@ test('notification text: one plain line per change, street level only', async ()
   assert.equal(n.body.split('\n').length, 5);
   assert.match(n.body, /\+1 more$/);
   assert.ok(!/1261|house/.test(n.body));
+});
+
+test('municipality topic: every outage in the town, named by street; street topic unchanged', async () => {
+  const L = await import('../netlify/functions/lib/feed-diff.mjs');
+  const munis = ['Bowen Island', 'Burnaby'];
+  const subTown = { ...L.normaliseSubscription({ ...sub('https://p/t', '', 'Bowen Island'), topics: ['muni'] }), id: 't' };
+  const subBoth = { ...L.normaliseSubscription({ ...sub('https://p/b', 'adams rd', 'Bowen Island'), topics: ['street', 'muni'] }), id: 'b' };
+  const subStreet = { ...L.normaliseSubscription(sub('https://p/s', 'adams rd', 'Bowen Island')), id: 's' };
+  assert.deepEqual([subTown.topics, subBoth.topics, subStreet.topics], [['muni'], ['street', 'muni'], ['street']]);
+  assert.equal(L.normaliseSubscription({ ...sub('https://p/x', '', ''), topics: ['muni'] }), null, 'municipality topic needs a municipality');
+  const all = L.slimFeed(planned([o(1, '1-9 Adams Rd', 'Bowen Island'), o(2, '5 Cardena Dr', 'Bowen Island'), o(3, '7 Oak St', 'Burnaby')]), 'planned');
+  const pruned = L.pruneToSubscribers(all, [subTown, subBoth, subStreet], munis);
+  assert.deepEqual(pruned.outages.map((x) => x.id), [1, 2]);
+  assert.deepEqual(pruned.cores, ['muni:bowen island', 'street:adams']);
+  const changed = all.slice(0, 2).map((x) => ({ ...x, change: 'added' }));
+  const hits = L.pickSubscribers([subTown, subBoth, subStreet], changed, munis, new Set(pruned.cores));
+  assert.deepEqual([...hits.keys()].sort(), ['b', 's', 't']);
+  assert.deepEqual(hits.get('s').ids, [1]);
+  assert.deepEqual(hits.get('t').ids, [1, 2]);
+  assert.deepEqual(hits.get('b').ids, [1, 2]);
+  const town = L.notificationFor(hits.get('t'));
+  assert.equal(town.title, 'Bowen Island');
+  assert.match(town.body, /^1-9 Adams Rd: New planned outage/);
+  assert.match(town.body, /\n5 Cardena Dr: New planned outage/);
+  const both = L.notificationFor(hits.get('b'));
+  assert.equal(both.title, 'Adams Rd, Bowen Island');
+  assert.match(both.body, /^New planned outage: [^\n]+\n5 Cardena Dr: New planned outage/);
 });
