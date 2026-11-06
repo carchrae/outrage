@@ -22,7 +22,7 @@
   const BASE_KEY = 'outage-finder.baseline';
   const HIST_KEY = 'outage-finder.history';
   const HIST_MAX = 300;
-  const DEFAULT_MUNI = 'Bowen Island';
+  const DEFAULT_MUNI = ''; // nothing is prefilled; an empty municipality searches every municipality
   const GEO_MAX_KM = 60; // a centroid further than this is not a guess worth making
   const geocoderMeta = document.querySelector('meta[name="geocoder"]');
   const HAS_GEOCODER = !!(geocoderMeta && geocoderMeta.content); // set at build time when BC_GEOCODER_KEY exists

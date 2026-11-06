@@ -12,7 +12,7 @@ street segments with house-number ranges, so you can type `7500 Kraft Crescent, 
 and see whether your house number falls inside a listed range, with the full
 address list shown instead of clipped.
 
-The municipality comes first and defaults to Bowen Island, since matching without one is poor.
+The municipality field is left empty; an address can also carry it ("742 Evergreen Terrace, Bowen Island") and it is moved into the field.
 Results appear as you type. Until an address is saved, a prompt under the search box asks you to
 press Save Address (or Enter), which remembers the address in the browser. Every later visit opens on the saved
 address, flags what changed since the previous visit (new, rescheduled, cancelled, updated or
