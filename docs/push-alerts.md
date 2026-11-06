@@ -1,6 +1,19 @@
 # Push alerts for Planned outrage
 
-As of 2026-11-02. Parked: the app stays simple with no background checks. This is the plan for when it is picked up.
+Written 2026-11-02, implemented 2026-11-05. The design below was built as described, with these adjustments:
+
+- The page keeps localStorage as its store and mirrors the address and snapshot into IndexedDB for the
+  worker (`alerts.js`), rather than moving everything to IndexedDB. Nothing in `app.js` became async.
+- The worker does not update the snapshot after a push. The page still computes "changes since your last
+  visit" from the snapshot on the next open, so the notification and the page agree; a second push before a
+  visit repeats the earlier changes along with the new ones.
+- Matching and diffing moved from `app.js` into `public/matcher.js`, shared by the page, the worker and tests.
+- Finished planned outages are not pushed on their own; the server pushes on any feed change to a listed
+  street and the worker reports whatever the diff shows, which includes a finished outage only alongside
+  something else. Three consecutive push failures, or a 404/410, delete the subscription. The page re-sends
+  the street on each visit when it changed or the record is over a week old. Email was not built.
+
+Setup is in the README under "Push alerts".
 
 ## Goal
 

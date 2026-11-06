@@ -4,6 +4,12 @@
   # picked up on the next normal visit, with no hard reload needed.
   command = "node scripts/stamp.js"
 
+# Push alerts: netlify/functions/subscribe.mjs (POST/DELETE /api/subscribe) and the hourly
+# netlify/functions/check-feeds.mjs. Both need VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and
+# VAPID_SUBJECT set in the site's environment (see README).
+[functions]
+  node_bundler = "esbuild"
+
 # Netlify proxies these paths server-side, which sidesteps the missing CORS
 # headers on BC Hydro's feed. The browser only ever talks to this site.
 [[redirects]]
@@ -44,3 +50,15 @@
   for = "/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# The service worker and manifest must never be served stale.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    Service-Worker-Allowed = "/"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

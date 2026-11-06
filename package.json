@@ -7,7 +7,13 @@
     "start": "node server.js",
     "test": "node --test test/*.test.js",
     "check-live": "node scripts/check-live.js",
-    "build": "node scripts/stamp.js"
+    "build": "node scripts/stamp.js",
+    "icons": "node scripts/make-icons.js",
+    "vapid": "web-push generate-vapid-keys"
   },
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0",
+    "web-push": "^3.6.7"
+  }
 }

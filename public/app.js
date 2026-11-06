@@ -2,6 +2,8 @@
 (function () {
   'use strict';
   const P = window.OutageParser;
+  const M = window.OutageMatcher;
+  const A = window.OutageAlerts || null; // push alerts (optional module)
   const API = window.OUTAGE_API || '/api/planned';
   const API_CURRENT = window.OUTAGE_API_CURRENT || '/api/current';
   const OFFICIAL = 'https://www.bchydro.com/power-outages/app/outage-list-planned.html';
@@ -25,6 +27,7 @@
   const state = {
     outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
     home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], showSearch: false,
+    alertsBusy: false, alertsMsg: '',
     current: [], currentError: '',
   };
 
@@ -32,7 +35,11 @@
   function setHTML(el, html) { if (el.innerHTML !== html) el.innerHTML = html; }
 
   function readJSON(store, key) { try { return JSON.parse(store.getItem(key) || 'null'); } catch (e) { return null; } }
-  function writeJSON(store, key, val) { try { if (val == null) store.removeItem(key); else store.setItem(key, JSON.stringify(val)); } catch (e) { /* storage unavailable */ } }
+  function writeJSON(store, key, val) {
+    try { if (val == null) store.removeItem(key); else store.setItem(key, JSON.stringify(val)); } catch (e) { /* storage unavailable */ }
+    // The service worker cannot read localStorage, so the address and snapshot are mirrored where it can.
+    if (A && store === localStorage && (key === HOME_KEY || key === SNAP_KEY)) A.mirror(key === HOME_KEY ? 'home' : 'snapshot', val);
+  }
 
   // ------------------------------------------------------------ data
 
@@ -49,6 +56,7 @@
     } finally {
       state.loading = false;
       render();
+      if (A && state.home && !state.error) { A.mirror('home', state.home); A.sync(state.home, state.munis); }
     }
   }
 
@@ -59,26 +67,10 @@
   }
 
   function ingest(data, currentData) {
-    const regions = data.regions || [];
-    const currentRegions = (currentData && currentData.regions) || [];
-    const muniSet = new Set();
-    for (const r of regions.concat(currentRegions)) {
-      for (const m of r.municipalities || []) muniSet.add(typeof m === 'string' ? m : m.name);
-      for (const o of r.outages || []) if (o.municipality) muniSet.add(o.municipality);
-    }
-    state.munis = [...muniSet].sort((a, b) => a.localeCompare(b));
-    const outages = [];
-    for (const r of regions) {
-      for (const o of r.outages || []) {
-        outages.push({ ...o, kind: 'planned', regionName: o.regionName || r.name, regionId: r.id, parsed: P.parseArea(o.area, state.munis) });
-      }
-    }
-    const current = [];
-    for (const r of currentRegions) {
-      for (const o of r.outages || []) {
-        current.push({ ...o, kind: 'current', regionName: o.regionName || r.name, regionId: r.id, related: [], parsed: P.parseArea(o.area, state.munis) });
-      }
-    }
+    const fed = M.ingestFeeds(data, currentData);
+    state.munis = fed.munis;
+    const outages = fed.outages;
+    const current = fed.current;
     current.sort((a, b) => b.numCustomersOut - a.numCustomersOut);
     state.current = current;
     // Outages sharing municipality + time window are usually one job split over several listings ("Cont'd").
@@ -116,24 +108,11 @@
   }
 
   /** Municipality names matching free text: exact name first, otherwise any name containing the text. */
-  function resolveMunis(text) {
-    const t = (text || '').trim().toLowerCase();
-    if (!t) return null;
-    const exact = state.munis.filter((m) => m.toLowerCase() === t);
-    if (exact.length) return new Set(exact.map((m) => m.toLowerCase()));
-    const partial = state.munis.filter((m) => m.toLowerCase().includes(t));
-    return new Set(partial.map((m) => m.toLowerCase()));
-  }
+  function resolveMunis(text) { return M.resolveMunis(state.munis, text); }
 
   // ------------------------------------------------------------ search
 
-  function statusOf(o, now) {
-    if (o.kind === 'current') return 'in progress';
-    if (o.parsed.flags.cancelled) return 'cancelled';
-    if (now < o.dateOff) return 'upcoming';
-    if (now <= o.dateOn) return 'in progress';
-    return 'finished';
-  }
+  function statusOf(o, now) { return M.statusOf(o, now); }
 
   function search() {
     const now = Date.now();
@@ -197,56 +176,11 @@
   /** Outages that list the saved address: strong = street definitely listed, weak = similar street only. */
   function homeMatches(now, address, muni) {
     const home = address != null ? { address, muni } : state.home;
-    const q = P.parseQuery(home.address, state.munis);
-    const muniSet = resolveMunis(home.muni || q.muni);
-    const strong = [], weak = [], nearby = [];
-    for (const o of state.outages.concat(state.current)) {
-      if (!state.past && statusOf(o, now) === 'finished') continue;
-      const match = P.matchOutage(q, o.parsed);
-      const muniMatch = !!muniSet && (muniSet.has(o.municipality.toLowerCase()) || (match && muniSet.has(match.segment.locality.toLowerCase())));
-      if (!match) { if (o.kind === 'current' && muniMatch) nearby.push({ o, match: null, muniMatch: true }); continue; }
-      if (muniSet && !muniMatch) continue;
-      if (match.streetScore >= 2 && !match.segment.boundary) strong.push({ o, match, muniMatch: true });
-      else if (o.kind === 'current' && muniMatch) nearby.push({ o, match, muniMatch: true });
-      else weak.push({ o, match, muniMatch: true });
-    }
-    strong.sort((a, b) => ((a.o.kind === 'current' ? 0 : 1) - (b.o.kind === 'current' ? 0 : 1)) || (b.match.level - a.match.level) || (a.o.dateOff - b.o.dateOff));
-    return { q, strong, weak, nearby };
+    return M.homeMatches(state.outages.concat(state.current), state.munis, home, now, state.past);
   }
 
-  function snapshotOf(items) {
-    const out = {};
-    for (const { o, match } of items) {
-      out[o.id] = { kind: o.kind, dateOff: o.dateOff, dateOn: o.dateOn, cancelled: o.parsed.flags.cancelled, listed: match.numberListed, text: o.parsed.text };
-    }
-    return out;
-  }
-
-  /** Compare the current matches with the snapshot saved on the previous visit. */
-  function computeDiff(base, items, now) {
-    const changes = { added: [], rescheduled: [], cancelled: [], updated: [], finished: [], removed: [], byId: {} };
-    if (!base || !base.items) return changes;
-    const prev = base.items;
-    for (const { o } of items) {
-      const p = prev[o.id];
-      if (!p) { changes.added.push(o); changes.byId[o.id] = o.kind === 'current' ? 'New unplanned outage' : 'New'; continue; }
-      if (o.kind === 'current') {
-        if (p.dateOn !== o.dateOn || p.text !== o.parsed.text) { changes.updated.push(o); changes.byId[o.id] = 'Updated'; }
-        continue;
-      }
-      if (!p.cancelled && o.parsed.flags.cancelled) { changes.cancelled.push(o); changes.byId[o.id] = 'Now cancelled'; }
-      else if (p.dateOff !== o.dateOff || p.dateOn !== o.dateOn) { changes.rescheduled.push({ o, was: p }); changes.byId[o.id] = 'Time changed'; }
-      else if (p.text !== o.parsed.text) { changes.updated.push(o); changes.byId[o.id] = 'Address list updated'; }
-    }
-    const currentIds = new Set(items.map((i) => String(i.o.id)));
-    for (const id of Object.keys(prev)) {
-      if (currentIds.has(id)) continue;
-      const p = prev[id];
-      if (p.kind === 'current' || p.dateOn < now) changes.finished.push({ id, ...p });
-      else changes.removed.push({ id, ...p });
-    }
-    return changes;
-  }
+  function snapshotOf(items) { return M.snapshotOf(items); }
+  function computeDiff(base, items, now) { return M.computeDiff(base, items, now); }
 
   function diffLines(d) {
     const lines = [];
@@ -340,14 +274,16 @@
       // A new address has no history: start a fresh baseline so nothing is reported as "new".
       writeJSON(localStorage, SNAP_KEY, null);
       writeJSON(sessionStorage, BASE_KEY, null);
-      state.baseline = undefined; state.diff = null; state.history = [];
+      state.baseline = undefined; state.diff = null; state.history = []; state.alertsMsg = '';
     }
     render();
+    if (A && changed) A.sync(state.home, state.munis); // moves an existing alert subscription to the new street
   }
 
 
   function forgetHome() {
-    state.home = null; state.baseline = undefined; state.diff = null; state.history = []; state.showSearch = false;
+    if (A) A.disable();
+    state.home = null; state.baseline = undefined; state.diff = null; state.history = []; state.showSearch = false; state.alertsMsg = '';
     writeJSON(localStorage, HOME_KEY, null); writeJSON(localStorage, SNAP_KEY, null); writeJSON(sessionStorage, BASE_KEY, null); writeJSON(localStorage, HIST_KEY, null);
     state.query = ''; els.q.value = ''; state.muni = DEFAULT_MUNI; els.muni.value = state.muni;
     writeState();
@@ -439,8 +375,23 @@
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
   ${changes}
+  ${alertsControl()}
   <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-forget">Clear my address and history</a></p>
 </div>`);
+  }
+
+  /** The push-alert toggle for the saved address. Empty when the browser or the deploy cannot do push. */
+  function alertsControl() {
+    if (!A || !A.supported()) return '';
+    const st = A.status();
+    let html;
+    if (st === 'blocked') html = `<span class="muted">Alerts are blocked for this site in your browser's notification settings.</span>`;
+    else if (st === 'on') html = `<span class="alerts-on">Alerts on</span> <span class="muted">You get a notification when an outage listing your street changes.</span> <a href="#" id="home-alerts-off">Turn off alerts</a>`;
+    else if (A.needsInstall()) html = `<span class="muted">For alerts on iPhone or iPad, add this page to your Home Screen (Share, then Add to Home Screen) and open it from there.</span>`;
+    else if (state.alertsBusy) html = `<span class="muted">Turning on alerts…</span>`;
+    else html = `<a href="#" id="home-alerts-on">Alert me when this changes</a> <span class="muted">Sends your street name to the server, not your house number.</span>`;
+    const msg = state.alertsMsg ? ` <span class="alerts-msg">${esc(state.alertsMsg)}</span>` : '';
+    return `<p class="home-alerts">${html}${msg}</p>`;
   }
 
   // ------------------------------------------------------------ render
@@ -735,6 +686,20 @@
       e.preventDefault();
       state.showSearch = true; state.query = ''; els.q.value = ''; state.muni = state.home.muni || DEFAULT_MUNI; els.muni.value = state.muni;
       writeState(); render(); els.q.focus();
+    }
+    else if (id === 'home-alerts-on') {
+      e.preventDefault();
+      state.alertsBusy = true; state.alertsMsg = ''; render();
+      A.enable(state.home, state.munis)
+        .then(() => { state.alertsMsg = ''; })
+        .catch((err) => { state.alertsMsg = err && err.message ? err.message : 'Could not turn on alerts.'; })
+        .then(() => { state.alertsBusy = false; render(); });
+    }
+    else if (id === 'home-alerts-off') {
+      e.preventDefault();
+      state.alertsMsg = '';
+      A.disable().then(() => render());
+      render();
     }
     else if (id === 'home-show') { e.preventDefault(); state.showSearch = false; state.query = state.home.address; els.q.value = state.query; state.muni = state.home.muni || ''; els.muni.value = state.muni; writeState(); render(); }
   });

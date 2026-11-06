@@ -174,3 +174,7 @@ details.more-streets .addresses { margin-top: 6px; }
 .save-alert { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 12px 12px; border-top: 2px solid var(--warn); border-bottom: 2px solid var(--warn); color: var(--warn); }
 .save-alert div { flex: 1 1 320px; }
 .save-alert b { color: inherit; }
+
+.home-alerts { margin: 10px 0 0; font-size: 0.9rem; }
+.home-alerts .alerts-on { color: var(--hit); font-weight: 600; }
+.home-alerts .alerts-msg { color: var(--warn); }

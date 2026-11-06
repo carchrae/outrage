@@ -26,6 +26,11 @@ async function proxy(url) {
 
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/api/subscribe') {
+    // Push subscriptions are a Netlify function; run `netlify dev` to exercise them locally.
+    res.writeHead(501, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Push alerts need the Netlify functions (netlify dev)' }));
+  }
   if (FEEDS[url.pathname]) {
     try {
       const body = await proxy(FEEDS[url.pathname]);

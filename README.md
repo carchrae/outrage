@@ -24,20 +24,28 @@ wipes everything.
 Unplanned outages come from BC Hydro's current-outage feed and are shown alongside planned ones:
 on the saved address when they list its street or hundred-block, and under any municipality search.
 
-The app checks the feeds when the page loads; reload to refresh. Background alerts are deliberately not
-built; `docs/push-alerts.md` holds the plan for doing it with Web Push without storing addresses server-side.
+The app checks the feeds when the page loads; reload to refresh. "Alert me when this changes" on the saved
+address turns on push alerts: an hourly check on Netlify diffs the feeds and pushes to the browsers whose
+street is touched, and the service worker then matches the full address locally and shows a notification.
+See "Push alerts" below and `docs/push-alerts.md` for the design.
 
-No build step, no dependencies. Plain HTML, CSS and JavaScript in `public/`.
+The site itself is plain HTML, CSS and JavaScript in `public/` with no build step. The two dependencies
+(`web-push`, `@netlify/blobs`) are only used by the Netlify functions.
 
 ## Browser storage
 
-Everything stays in the browser; nothing is sent anywhere except the outage feed request.
+Everything stays in the browser; nothing is sent anywhere except the outage feed request, and, only
+when alerts are turned on, the street name and municipality (see "Push alerts").
 
 | localStorage key | Contents |
 |---|---|
 | `outage-finder.home` | saved address and municipality |
 | `outage-finder.snapshot` | matches seen on the last visit, used to detect changes |
 | `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
+| `outage-finder.alerts` | street, municipality and push endpoint registered for alerts |
+
+The address and snapshot are also mirrored into IndexedDB (database `outrage`, store `kv`) because
+the service worker cannot read localStorage.
 
 The "since your last visit" baseline is pinned in sessionStorage so a reload does not clear the
 notice. Changing or clearing the address resets the snapshot and history. The page always opens on
@@ -62,17 +70,52 @@ build command (which rewrites the asset URLs in `index.html` to `app.js?v=<commi
 and sets long-lived cache headers, so each deploy is picked up on the next visit
 without a hard reload), publishes `public/` and proxies
 `/api/planned` and `/api/current` to BC Hydro with a 200 rewrite. Connect the repo to
-Netlify, or run `netlify deploy --prod` from this directory. No functions are needed.
+Netlify, or run `netlify deploy --prod` from this directory.
+
+## Push alerts
+
+Turning alerts on asks for notification permission, subscribes the browser to push, and sends the
+server the normalised street name and municipality (for example `adams rd` and `bowen island`) with
+the push subscription. The house number, unit, snapshot and history never leave the browser.
+
+- `netlify/functions/subscribe.mjs` serves `POST` and `DELETE /api/subscribe` and keeps one record
+  per push endpoint in Netlify Blobs (store `push`).
+- `netlify/functions/check-feeds.mjs` runs hourly. It fetches both feeds, diffs them against the
+  copy from the previous run, works out which streets each added, changed or removed outage lists,
+  and pushes only to subscriptions on those streets. The payload is just outage ids. A 404 or 410
+  from the push service, or three failures in a row, deletes the record.
+- `public/sw.js` handles the push: it fetches the feeds through `/api`, matches the saved address
+  with the same `matcher.js` the page uses, diffs against the last snapshot and shows one
+  notification describing the changes. Clicking it opens the site, which shows the same changes.
+- Subscriptions are re-sent on every visit when the street changed or the record is a week old, and
+  removed when the address is cleared.
+
+Setup, once per site:
+
+```sh
+npm install
+npm run vapid       # prints a VAPID public/private key pair
+```
+
+In the Netlify site settings, add the environment variables `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
+and `VAPID_SUBJECT` (a `mailto:` address or the site URL), then redeploy. The build stamps the public
+key into `index.html`; without it the alert toggle is simply not shown. Scheduled functions only run
+on deployed sites, not in `netlify dev`.
+
+iPhone and iPad only receive Web Push from a site added to the Home Screen (iOS 16.4 and later), so
+the page shows an "Add to Home Screen" hint there instead of the toggle until it is opened from the
+installed icon. Android and desktop browsers work from a normal tab.
 
 ## Local development
 
 ```sh
 npm start          # serves public/ on http://localhost:3000 and proxies /api/* like Netlify does
-npm test           # parser unit tests (node:test)
+npm test           # parser, matcher and feed-diff unit tests (node:test)
 npm run check-live # fetches the live feed and reports how well the parser handles every entry
 ```
 
-`netlify dev` also works if you have the Netlify CLI installed.
+`netlify dev` also works if you have the Netlify CLI installed, and is the only way to exercise
+`/api/subscribe` locally; `npm start` answers it with 501.
 
 ## How matching works
 
