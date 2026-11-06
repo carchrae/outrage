@@ -683,7 +683,8 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
     const muni = state.home.muni || q.muni || '';
     const st = A.status();
     const blocked = st === 'blocked';
-    const row = (key, label, detail, checked, disabled) => `<label class="opt${disabled ? ' off' : ''}"><input type="checkbox" name="topic" value="${key}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}><span><b>${label}</b> <span class="muted">${detail}</span><span class="state">${checked ? 'on' : 'off'}</span></span></label>`;
+    // The checkbox is the choice being made; the small ON/OFF is what is in force right now.
+    const row = (key, label, detail, checked, disabled) => `<label class="opt${disabled ? ' off' : ''}"><input type="checkbox" name="topic" value="${key}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}><span><b>${label}</b> <span class="muted">${detail}</span><span class="state${on.includes(key) ? ' on' : ''}">${on.includes(key) ? 'on' : 'off'}</span></span></label>`;
     const options = `<div class="opts">
 ${row('street', esc(street), 'outages that list your street', first ? true : on.includes('street'), blocked)}
 ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every outage in ' + esc(muni) + ', planned or unplanned' : 'add a municipality to your address to use this', first ? false : on.includes('muni'), blocked || !muni)}

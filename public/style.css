@@ -213,7 +213,7 @@ html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-b
 .dialog .opt > span { flex: 1; }
 .dialog .opt .muted { display: block; font-size: 0.88rem; }
 .dialog .opt .state { float: right; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; color: var(--muted); margin-left: 8px; }
-.dialog .opt input:checked ~ span .state { color: var(--hit); }
+.dialog .opt .state.on { color: var(--hit); }
 .dialog details.limits { margin: 0 0 12px; font-size: 0.9rem; color: var(--muted); }
 .dialog details.limits summary { cursor: pointer; color: var(--text); }
 .dialog details.limits ul { margin-top: 6px; }
