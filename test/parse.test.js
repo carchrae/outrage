@@ -147,6 +147,18 @@ test('street-only list inside a bold note: any house number matches, slashes exp
   assert.equal(P.matchOutage(P.parseQuery('1800 Adams Road', ['Bowen Island']), p2).level, 3);
 });
 
+test('a semicolon list of bare street names inside a bold note is parsed, not kept as a note', () => {
+  const area = "<b>*Rescheduled from November 7, 2026* | Some premises on the following Streets will be impacted by this outage.\r\nAdams; Amelia; Anastasia; Arbutus Bay; Baker; Cates Hill; Elrond's; Forecastle</b><br/>Hilltop Pl, Woods Rd.";
+  const p = P.parseArea(area, ['Bowen Island']);
+  assert.deepEqual(p.notes, ['*Rescheduled from November 7, 2026* | Some premises on the following Streets will be impacted by this outage.']);
+  assert.ok(p.flags.rescheduled);
+  assert.deepEqual(p.segments.map((s) => s.label), ['Adams', 'Amelia', 'Anastasia', 'Arbutus Bay', 'Baker', 'Cates Hill', "Elrond's", 'Forecastle', 'Hilltop Pl', 'Woods Rd']);
+  assert.equal(P.matchOutage(P.parseQuery('1400 Adams Rd', ['Bowen Island']), p).streetScore, 2);
+  // A bold note whose sentences happen to be short is still a note.
+  const n = P.parseArea('<b>Note: Crews on site; Expect delays; Bring a flashlight; Stay clear; Thank you</b><br/>1-9 Adams Rd', []);
+  assert.equal(n.segments.length, 1);
+});
+
 test('a list of bare street names does not treat the last name as a locality', () => {
   const p = P.parseArea('<b>Parts of Bowen Island</b><br/>Adams, Amelia, Anastasia, Blue Sky Cir, Eagle Tree Rd, Windjammer', ['Bowen Island']);
   assert.deepEqual(p.segments.map((s) => s.label), ['Adams', 'Amelia', 'Anastasia', 'Blue Sky Cir', 'Eagle Tree Rd', 'Windjammer']);
@@ -163,4 +175,29 @@ test('block ranges: "9500 - 9600 block X" covers 9500-9699', () => {
   assert.deepEqual(p.segments.map((s) => [s.street, s.numbers[0].lo, s.numbers[0].hi]), [['SHELEST DR', 9500, 9699], ['HORNBY RD', 700, 899], ['STUART DR', 0, 99]]);
   assert.equal(P.matchOutage(P.parseQuery('9550 Shelest Dr', []), p).level, 5);
   assert.equal(P.matchOutage(P.parseQuery('9750 Shelest Dr', []), p).level, 3);
+});
+
+test('safety net: a street named only in notice text is a possible match, unless it names another street', () => {
+  // The street list is buried in a note the parser keeps as prose.
+  const p = P.parseArea('<b>Crews will replace a pole near Adams and Cates Hill. Expect a short outage.</b><br/>1-9 Miller Rd', ['Bowen Island']);
+  const m = P.matchOutage(P.parseQuery('1400 Adams Rd', ['Bowen Island']), p);
+  assert.ok(m && m.mention, 'Adams in a note should be a possible match');
+  assert.equal(m.level, 1);
+  assert.ok(m.streetScore < 2, 'never a strong match');
+  assert.ok(P.matchOutage(P.parseQuery('Adams Road', []), P.parseArea('<b>Work on Adams Rd. today</b>', [])).mention);
+  // Another street type or a longer name is a different street.
+  for (const area of ['<b>Work near Adams St today</b>', '<b>Work near Adams Lake Rd today</b>', '<b>Work near Adamson today</b>']) {
+    assert.equal(P.matchOutage(P.parseQuery('1400 Adams Rd', []), P.parseArea(area, [])), null, area);
+  }
+  // A bare number is not a numbered street.
+  assert.equal(P.matchOutage(P.parseQuery('15 Ave', []), P.parseArea('<b>About 15 customers affected</b>', [])), null);
+  // A parsed match always wins over a mention.
+  assert.ok(!P.matchOutage(P.parseQuery('1400 Adams Rd', []), P.parseArea('1-9 Adams Rd', [])).mention);
+});
+
+test('safety net catches a street list the parser kept as a note', () => {
+  // Before the bare-name list fix this whole list was a note; the mention still finds Adams.
+  const p = { segments: [], text: '', notes: ['Some premises will be impacted by this outage. Adams Amelia'], prose: 'Some premises will be impacted by this outage. Adams; Amelia; Forecastle' };
+  assert.ok(P.matchOutage(P.parseQuery('1400 Adams Rd', []), p).mention);
+  assert.ok(P.matchOutage(P.parseQuery('Forecastle Rd', []), p).mention);
 });

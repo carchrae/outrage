@@ -146,6 +146,8 @@
     let s = decodeEntities(area || '');
     s = s.replace(/\r\n|\r|\n/g, ' ');
     s = s.replace(/<br\s*\/?>/gi, ' ; ');
+    // The whole notice with its separators intact, for mentionOf's safety net.
+    const prose = cleanToken(stripTags(s));
 
     // Pull out <b>...</b> notes. Bold text that is itself an address list stays in the stream.
     s = s.replace(/<b>([\s\S]*?)(?:<\/b>|$)/gi, (m, inner) => {
@@ -295,7 +297,7 @@
     for (const seg of segments) if (!seg.locality) seg.locality = currentLocality;
 
     const text = cleanToken(s.replace(/\s*;\s*/g, '; ').replace(/\s+,/g, ',').replace(/;\s*;/g, ';').replace(/^;\s*|\s*;$/g, ''));
-    return { notes, flags, segments, text };
+    return { notes, flags, segments, text, prose };
   }
 
   // "SE" or "Ave SE" extends the previous street; "Green Rd" is a street of its own.
@@ -332,12 +334,17 @@
     return null;
   }
 
-  /** True when text reads as a comma-separated list of streets (most items name a street type). */
+  /**
+   * True when text reads as a list of streets: most items name a street type, or it is a long
+   * list (8+) of short bare names ("Adams; Amelia; Anastasia; Arbutus Bay; ...").
+   */
   function isStreetList(text) {
     const items = text.split(/[,;]/).map(cleanToken).filter(Boolean);
     if (items.length < 2) return false;
     const streets = items.filter((it) => hasSuffix(it) && it.split(/\s+/).length <= 6);
-    return streets.length >= 2 && streets.length / items.length >= 0.6;
+    if (streets.length >= 2 && streets.length / items.length >= 0.6) return true;
+    const names = items.filter((it) => /^[A-Z][A-Za-z'’.\/ -]*$/.test(it) && it.split(/\s+/).length <= 3);
+    return items.length >= 8 && names.length / items.length >= 0.9;
   }
 
   /** "Cardena Dr/Rd" -> ["Cardena Dr", "Cardena Rd"]; "Park Rd/View Ln" -> ["Park Rd", "Park View Ln"]. */
@@ -478,8 +485,36 @@
   }
 
   /**
+   * Safety net for text the parser could not structure: does the street's name appear anywhere in the
+   * notice (address text or notes)? "Adams" or "Adams Rd" count for "Adams Rd"; "Adams St" and
+   * "Adams Lake Rd" do not. Returns a stand-in segment for the mention, or null.
+   */
+  function mentionOf(query, parsed) {
+    if (!query.core || query.core.replace(/ /g, '').length < 3) return null;
+    const qWords = query.core.split(' ');
+    const qType = streetType(query.key);
+    const numeric = /^\d+$/.test(query.core);
+    const hay = parsed.prose != null ? parsed.prose : [parsed.text].concat(parsed.notes).join(' ; ');
+    for (const raw of hay.split(/[,;|:()\/]|\.\s|\s(?:and|&)\s/i)) {
+      const item = cleanToken(raw);
+      const words = streetKey(item).split(' ').filter(Boolean);
+      for (let i = 0; i + qWords.length <= words.length; i++) {
+        if (!qWords.every((w, j) => words[i + j] === w)) continue;
+        const after = words.slice(i + qWords.length).filter((w) => !DIRECTIONS.has(w));
+        const next = after[0];
+        if (next && !SUFFIXES.has(next)) continue; // a longer name: "Adams Lake Rd"
+        if (next && qType && next !== qType) continue; // another street type: "Adams St"
+        if (numeric && next !== qType) continue; // "15" alone is a house number, not 15 Ave
+        return { street: item, key: streetKey(item), core: query.core, numbers: [], qualifier: '', locality: '', boundary: '', label: item, mention: true };
+      }
+    }
+    return null;
+  }
+
+  /**
    * Match a parsed query against a parsed outage area.
-   * @returns {null|{level:number, segment:object, numberListed:boolean|null, streetScore:number}}
+   * Falls back to a mention of the street anywhere in the notice (level 1, streetScore 1.5, mention: true).
+   * @returns {null|{level:number, segment:object, numberListed:boolean|null, streetScore:number, mention?:boolean}}
    */
   function matchOutage(query, parsed) {
     let best = null;
@@ -496,8 +531,10 @@
         best = { level, segment: seg, numberListed: listed, streetScore: ss };
       }
     }
-    return best;
+    if (best) return best;
+    const seg = mentionOf(query, parsed);
+    return seg ? { level: 1, segment: seg, numberListed: null, streetScore: 1.5, mention: true } : null;
   }
 
-  return { parseArea, parseQuery, matchOutage, streetKey, coreKey, streetScore, numberListed, levenshtein };
+  return { parseArea, parseQuery, matchOutage, mentionOf, streetKey, coreKey, streetScore, numberListed, levenshtein };
 });

@@ -30,6 +30,13 @@ test('pickSubscribers matches by street core and municipality, including removed
   assert.deepEqual([...hits.keys()].sort(), ['a', 'b', 'd']);
   assert.deepEqual(hits.get('a').ids, [1]);
   assert.deepEqual(hits.get('d').ids, [2]);
+
+  // Safety net: a street named only in notice prose still alerts and is kept in the pruned copy.
+  const prose = [{ ...L.slimFeed(planned([o(3, '<b>Crews near Adams and Cates Hill. Expect a short outage.</b>', 'Bowen Island')]), 'planned')[0], change: 'added' }];
+  assert.deepEqual([...L.pickSubscribers(subs, prose, munis).keys()].sort(), ['a', 'b']);
+  assert.equal(L.pruneToSubscribers(prose, subs, munis).outages.length, 1);
+  const other = [{ ...L.slimFeed(planned([o(4, '<b>Crews near Adams St. Expect a short outage.</b>', 'Bowen Island')]), 'planned')[0], change: 'added' }];
+  assert.equal(L.pickSubscribers(subs, other, munis).size, 0);
 });
 
 test('normaliseSubscription rejects bad records and never keeps a house number', async () => {

@@ -372,7 +372,10 @@
       const excluded = planned.some((i) => i.match.numberListed === false);
       summary += `<strong>${n}</strong> planned outage${n === 1 ? '' : 's'} list${n === 1 ? 's' : ''} ${whose} street${matches.q.number && excluded ? `, but not ${whose} house number` : ''}.`;
     }
-    if (matches.weak.length) summary += ` ${matches.weak.length} similar street name${matches.weak.length === 1 ? '' : 's'} shown below.`;
+    const mentions = matches.weak.filter((i) => i.match.mention).length;
+    const similar = matches.weak.length - mentions;
+    if (similar) summary += ` ${similar} similar street name${similar === 1 ? '' : 's'} shown below.`;
+    if (mentions) summary += ` ${mentions} outage notice${mentions === 1 ? ' mentions' : 's mention'} ${whose} street but could not be read for certain; check below.`;
     if (!out.length && matches.nearby.length && (whose !== 'your' || state.showMore)) summary += ` ${matches.nearby.length} unplanned outage${matches.nearby.length === 1 ? '' : 's'} elsewhere in ${esc(muni || matches.q.muni)}.`;
     return summary;
   }
@@ -785,6 +788,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (m) {
       if (m.numberListed === true) { if (m.streetScore < 2) badges.push('<span class="badge hit">Address listed (similar street name)</span>'); }
       else if (m.numberListed === false) badges.push(`<span class="badge warn">Street listed, but ${q.number} is not in the listed numbers</span>`);
+      else if (m.mention) badges.push('<span class="badge warn">Possible: street named in the notice</span>');
       else badges.push(`<span class="badge ${m.streetScore >= 2 ? 'hit' : ''}">${m.streetScore >= 2 ? 'Street listed' : 'Similar street name'}</span>`);
       if (!item.muniMatch) badges.push(`<span class="badge muted">${esc(o.municipality)}, not ${esc(state.muni || q.muni)}</span>`);
     }
@@ -844,7 +848,8 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       const qual = s.qualifier ? ` <span class="qual">(${esc(s.qualifier)})</span>` : '';
       return `<li class="${isMatch ? 'match' : ''}">${esc(s.label)}${qual}${loc}</li>`;
     };
-    const all = o.parsed.segments;
+    // A mention found only in the notice text is not one of the parsed streets; show it first.
+    const all = m && m.mention ? [m.segment].concat(o.parsed.segments) : o.parsed.segments;
     if (!all.length) return '';
     if (!m) return `<ul class="addresses">${all.map((s) => item(s, false)).join('')}</ul>`;
     const onStreet = all.filter((s) => s === m.segment || (q && q.key && P.streetScore(q, s) >= 2));

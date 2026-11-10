@@ -58,6 +58,13 @@ export function streetsOf(o, munis) {
   return parsed.segments.filter((s) => s.key && !s.boundary).map((s) => ({ key: s.key, core: s.core, street: s.street, locality: (s.locality || '').toLowerCase() }));
 }
 
+/** True when some subscriber's street is named anywhere in the outage's notice text (see parse.js mentionOf). */
+function mentionsAny(o, subs, munis) {
+  if (!subs.length) return false;
+  const parsed = P.parseArea(o.area, munis);
+  return subs.some((s) => P.mentionOf({ key: s.street, core: s.core }, parsed));
+}
+
 /**
  * Normalise a subscriber record from the subscribe endpoint. Returns null when the street is unusable.
  * The street arrives already normalised by parse.js on the client; it is re-normalised here anyway.
@@ -95,7 +102,8 @@ export function pruneToSubscribers(outages, subs, munis) {
   const cores = new Set(subs.filter(wantsStreet).map((s) => s.core).filter(Boolean));
   const towns = new Set(subs.filter(wantsMuni).map((s) => s.muni).filter(Boolean));
   const inTown = (o) => [...towns].some((t) => muniOf(o).includes(t));
-  const kept = outages.filter((o) => inTown(o) || streetsOf(o, munis).some((st) => cores.has(st.core)));
+  const streetSubs = subs.filter((s) => wantsStreet(s) && s.core);
+  const kept = outages.filter((o) => inTown(o) || streetsOf(o, munis).some((st) => cores.has(st.core)) || mentionsAny(o, streetSubs, munis));
   // Keys the copy covers: a subscriber whose key is new since the last run has no baseline yet.
   const keys = [...cores].map((c) => 'street:' + c).concat([...towns].map((t) => 'muni:' + t)).sort();
   return { outages: kept, cores: keys };
@@ -135,6 +143,15 @@ export function pickSubscribers(subs, changed, munis, knownKeys) {
     const streets = streetsOf(o, munis);
     for (const street of streets) {
       for (const sub of byCore.get(street.core) || []) if (muniMatches(sub.muni, o, street)) add(sub, o, street, 'street');
+    }
+    // Safety net: a street named in notice text the parser could not structure still alerts.
+    const parsed = P.parseArea(o.area, munis);
+    for (const list of byCore.values()) {
+      for (const sub of list) {
+        if (hits.has(sub.id) && hits.get(sub.id).ids.includes(o.id)) continue;
+        const seg = P.mentionOf({ key: sub.street, core: sub.core }, parsed);
+        if (seg && muniMatches(sub.muni, o, seg)) add(sub, o, seg, 'street');
+      }
     }
     for (const sub of byTown) if (muniOf(o).includes(sub.muni) || streets.some((st) => st.locality.includes(sub.muni))) add(sub, o, null, 'muni');
   }
