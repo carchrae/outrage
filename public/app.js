@@ -22,6 +22,8 @@
   const BASE_KEY = 'outage-finder.baseline';
   const HIST_KEY = 'outage-finder.history';
   const HIST_MAX = 300;
+  const CHANGES_KEY = 'outage-finder.changes';
+  const CHANGES_KEEP_MS = 7 * 24 * 3600 * 1000; // with auto-clear on, a change goes a week after its outage ends
   const DEFAULT_MUNI = ''; // nothing is prefilled; an empty municipality searches every municipality
   const GEO_MAX_KM = 60; // a centroid further than this is not a guess worth making
   const geocoderMeta = document.querySelector('meta[name="geocoder"]');
@@ -29,7 +31,7 @@
 
   const state = {
     outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
-    home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], showSearch: false,
+    home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], changeLog: [], changeLogAuto: false, showChangeLog: false, showSearch: false,
     alertsBusy: false, alertsMsg: '', showMore: false, installPrompt: null,
     current: [], currentError: '',
   };
@@ -248,16 +250,20 @@
   function snapshotOf(items) { return M.snapshotOf(items); }
   function computeDiff(base, items, now) { return M.computeDiff(base, items, now); }
 
-  function diffLines(d) {
-    const lines = [];
-    if (!d) return lines;
-    for (const o of d.added) lines.push(o.kind === 'current' ? `Unplanned outage on your street, started ${fmtDateTime(o.dateOff)} (#${o.id})` : `New: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`);
-    for (const { o, was } of d.rescheduled) lines.push(`Time changed: was ${fmtWindow(was.dateOff, was.dateOn)}, now ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`);
-    for (const o of d.cancelled) lines.push(`Cancelled: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`);
-    for (const o of d.updated) lines.push(o.kind === 'current' ? `Unplanned outage updated: ${o.dateOn ? 'restoration estimated ' + fmtDateTime(o.dateOn) : 'no restoration estimate yet'} (#${o.id})` : `Address list updated: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`);
-    for (const p of d.removed) lines.push(`No longer listed: ${fmtWindow(p.dateOff, p.dateOn)} (#${p.id})`);
-    for (const p of d.finished) lines.push(p.kind === 'current' ? `Unplanned outage resolved, started ${fmtDateTime(p.dateOff)} (#${p.id})` : `Finished: ${fmtWindow(p.dateOff, p.dateOn)} (#${p.id})`);
-    return lines;
+  function diffLines(d) { return diffEntries(d).map((e) => e.line); }
+
+  /** One {id, line, end} per change; `end` is when the outage ends (null if unknown), for pruning the change log. */
+  function diffEntries(d) {
+    const out = [];
+    if (!d) return out;
+    const add = (id, line, end) => out.push({ id, line, end: Number.isFinite(end) ? end : null });
+    for (const o of d.added) add(o.id, o.kind === 'current' ? `Unplanned outage on your street, started ${fmtDateTime(o.dateOff)} (#${o.id})` : `New: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, o.dateOn);
+    for (const { o, was } of d.rescheduled) add(o.id, `Time changed: was ${fmtWindow(was.dateOff, was.dateOn)}, now ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, Math.max(o.dateOn, was.dateOn));
+    for (const o of d.cancelled) add(o.id, `Cancelled: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, o.dateOn);
+    for (const o of d.updated) add(o.id, o.kind === 'current' ? `Unplanned outage updated: ${o.dateOn ? 'restoration estimated ' + fmtDateTime(o.dateOn) : 'no restoration estimate yet'} (#${o.id})` : `Address list updated: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, o.dateOn);
+    for (const p of d.removed) add(p.id, `No longer listed: ${fmtWindow(p.dateOff, p.dateOn)} (#${p.id})`, p.dateOn);
+    for (const p of d.finished) add(p.id, p.kind === 'current' ? `Unplanned outage resolved, started ${fmtDateTime(p.dateOff)} (#${p.id})` : `Finished: ${fmtWindow(p.dateOff, p.dateOn)} (#${p.id})`, p.dateOn);
+    return out;
   }
 
 
@@ -274,6 +280,48 @@
     state.diff = computeDiff(state.baseline, matches.strong, now);
     writeJSON(localStorage, SNAP_KEY, { at: now, items: snapshotOf(matches.strong), address: state.home.address, muni: state.home.muni || '' });
     updateHistory(matches.strong, now);
+    updateChangeLog(matches.strong, now);
+  }
+
+  /**
+   * Every change seen for the saved address. Kept until the user clears it, or, with auto-clear
+   * ticked, until a week after the outage ends.
+   * Diffs against its own snapshot of unfinished outages, so showing past outages logs nothing.
+   */
+  function updateChangeLog(strong, now) {
+    const addrKey = state.home.address + '|' + (state.home.muni || '');
+    const items = strong.filter((i) => statusOf(i.o, now) !== 'finished');
+    let log = readJSON(localStorage, CHANGES_KEY);
+    if (!log || log.address !== addrKey || !log.snap) log = { address: addrKey, entries: [] }; // first sight is the baseline
+    else for (const e of diffEntries(computeDiff(log.snap, items, now))) log.entries.push({ at: now, ...e });
+    log.snap = { at: now, items: snapshotOf(items) };
+    if (log.autoClear) log.entries = log.entries.filter((e) => (e.end != null ? Math.max(e.end, e.at) : e.at) + CHANGES_KEEP_MS >= now);
+    writeJSON(localStorage, CHANGES_KEY, log);
+    state.changeLog = log.entries;
+    state.changeLogAuto = !!log.autoClear;
+  }
+
+  /** Clear the change log now, or switch auto-clear on or off; the log's snapshot is kept either way. */
+  function editChangeLog(edit) {
+    const log = readJSON(localStorage, CHANGES_KEY);
+    if (!log) return;
+    if (edit.clear) log.entries = [];
+    if ('autoClear' in edit) log.autoClear = edit.autoClear;
+    writeJSON(localStorage, CHANGES_KEY, log);
+    if (edit.clear) state.showChangeLog = false;
+    render(); // re-runs updateChangeLog, which applies auto-clear straight away
+  }
+
+  /** The change log behind a button, shown only when it holds more than the "since your last visit" list. */
+  function changeLogControl(base) {
+    const entries = state.changeLog || [];
+    const since = base && base.items && !base.first ? base.at : Infinity;
+    if (!entries.some((e) => e.at <= since)) return '';
+    const button = `<p class="home-more"><button type="button" class="btn small" id="home-changelog">${state.showChangeLog ? 'Hide history' : `Show history (${entries.length} change${entries.length === 1 ? '' : 's'})`}</button></p>`;
+    if (!state.showChangeLog) return button;
+    const rows = entries.slice().reverse().map((e) => `<li><span class="muted">${esc(fmtDateTime(e.at))}:</span> ${esc(e.line)}</li>`).join('');
+    const controls = `<p class="changelog-controls"><label><input type="checkbox" id="changelog-auto"${state.changeLogAuto ? ' checked' : ''}> Automatically clear changes a week after the outage ends</label> <button type="button" class="btn small" id="changelog-clear">Clear history</button></p>`;
+    return `${button}<div class="changes log"><strong>Changes seen for this address:</strong><ul>${rows}</ul>${controls}</div>`;
   }
 
   /** Long-term record of every outage ever seen for the saved address. Kept per address. */
@@ -340,7 +388,8 @@
       // A new address has no history: start a fresh baseline so nothing is reported as "new".
       writeJSON(localStorage, SNAP_KEY, null);
       writeJSON(sessionStorage, BASE_KEY, null);
-      state.baseline = undefined; state.diff = null; state.history = []; state.alertsMsg = '';
+      writeJSON(localStorage, CHANGES_KEY, null);
+      state.baseline = undefined; state.diff = null; state.history = []; state.changeLog = []; state.showChangeLog = false; state.alertsMsg = '';
     }
     render();
     if (A && changed) A.sync(state.home, state.munis).then((c) => { if (c) render(); }); // moves an existing alert subscription to the new street
@@ -349,8 +398,8 @@
 
   function forgetHome() {
     if (A) A.disable();
-    state.home = null; state.baseline = undefined; state.diff = null; state.history = []; state.showSearch = false; state.alertsMsg = '';
-    writeJSON(localStorage, HOME_KEY, null); writeJSON(localStorage, SNAP_KEY, null); writeJSON(sessionStorage, BASE_KEY, null); writeJSON(localStorage, HIST_KEY, null);
+    state.home = null; state.baseline = undefined; state.diff = null; state.history = []; state.changeLog = []; state.showChangeLog = false; state.showSearch = false; state.alertsMsg = '';
+    writeJSON(localStorage, HOME_KEY, null); writeJSON(localStorage, SNAP_KEY, null); writeJSON(sessionStorage, BASE_KEY, null); writeJSON(localStorage, HIST_KEY, null); writeJSON(localStorage, CHANGES_KEY, null);
     state.query = ''; els.q.value = ''; state.muni = DEFAULT_MUNI; els.muni.value = state.muni;
     writeState();
     render();
@@ -499,6 +548,7 @@
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
   ${changes}
+  ${changeLogControl(base)}
   ${alertsControl()}
   ${more}
 </div>
@@ -1017,6 +1067,9 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       A.disable().then(() => render());
       render();
     }
+    else if (id === 'home-changelog') { state.showChangeLog = !state.showChangeLog; render(); }
+    else if (id === 'changelog-auto') editChangeLog({ autoClear: e.target.checked });
+    else if (id === 'changelog-clear') { if (window.confirm('Clear the change history for this address?')) editChangeLog({ clear: true }); }
     else if (id === 'home-more') {
       state.showMore = !state.showMore; render();
       if (state.showMore) els.results.scrollIntoView({ behavior: 'smooth', block: 'start' });

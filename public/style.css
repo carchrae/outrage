@@ -235,3 +235,5 @@ html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-b
 .home-alerts { margin: 10px 0 0; font-size: 0.9rem; }
 .home-alerts .alerts-on { color: var(--hit); font-weight: 600; }
 .home-alerts .alerts-msg { color: var(--warn); }
+.changelog-controls { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); }
+.changelog-controls label { display: inline-flex; gap: 6px; align-items: center; }
