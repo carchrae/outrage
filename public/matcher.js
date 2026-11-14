@@ -92,9 +92,31 @@
     return out;
   }
 
-  /** Compare the current matches with a saved snapshot ({items}). */
+  const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', month: 'numeric', day: 'numeric' });
+
+  /** The day a listing says it was rescheduled from ("*Rescheduled from November 7, 2026*"), as "11-7"; '' if none. */
+  function rescheduledFrom(o) {
+    for (const n of (o.parsed && o.parsed.notes) || []) {
+      const r = n.replace(/\*+/g, '').match(/resched\w*\b.*?\bfrom\s+(.+)/i);
+      const d = r && r[1].match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})/i);
+      if (d) return `${MONTHS.indexOf(d[1].toLowerCase()) + 1}-${Number(d[2])}`;
+    }
+    return '';
+  }
+  function dayOf(ms) {
+    const parts = dayFmt.formatToParts(new Date(ms));
+    return `${Number(parts.find((x) => x.type === 'month').value)}-${Number(parts.find((x) => x.type === 'day').value)}`;
+  }
+
+  /**
+   * Compare the current matches with a saved snapshot ({items}).
+   * BC Hydro reschedules by listing a new outage ("Rescheduled from November 7") and dropping the old one; that
+   * pair is reported once, as rescheduled with `wasId`, not as a new outage plus a finished one.
+   * A cancelled listing that drops off is not news (its cancellation was), so it is not reported as finished.
+   */
   function computeDiff(base, items, now) {
-    const changes = { added: [], rescheduled: [], cancelled: [], updated: [], finished: [], removed: [], byId: {} };
+    const changes = { added: [], rescheduled: [], cancelled: [], updated: [], finished: [], removed: [], byId: {}, prevText: {} };
     if (!base || !base.items) return changes;
     const prev = base.items;
     for (const { o } of items) {
@@ -106,14 +128,24 @@
       }
       if (!p.cancelled && o.parsed.flags.cancelled) { changes.cancelled.push(o); changes.byId[o.id] = 'Now cancelled'; }
       else if (p.dateOff !== o.dateOff || p.dateOn !== o.dateOn) { changes.rescheduled.push({ o, was: p }); changes.byId[o.id] = 'Time changed'; }
-      else if (p.text !== o.parsed.text) { changes.updated.push(o); changes.byId[o.id] = 'Address list updated'; }
+      else if (p.text !== o.parsed.text) { changes.updated.push(o); changes.prevText[o.id] = p.text; changes.byId[o.id] = 'Street list changed'; }
     }
     const currentIds = new Set(items.map((i) => String(i.o.id)));
-    for (const id of Object.keys(prev)) {
-      if (currentIds.has(id)) continue;
-      const p = prev[id];
-      if (p.kind === 'current' || p.dateOn < now) changes.finished.push({ id, ...p });
-      else changes.removed.push({ id, ...p });
+    const gone = Object.keys(prev).filter((id) => !currentIds.has(id)).map((id) => ({ id, ...prev[id] }));
+    // Pair a new "rescheduled from <day>" listing with a dropped listing that was on that day.
+    for (const o of changes.added.slice()) {
+      const from = o.kind === 'planned' && rescheduledFrom(o);
+      const k = from ? gone.findIndex((p) => p.kind === 'planned' && dayOf(p.dateOff) === from) : -1;
+      if (k < 0) continue;
+      const [p] = gone.splice(k, 1);
+      changes.added.splice(changes.added.indexOf(o), 1);
+      changes.rescheduled.push({ o, was: p, wasId: p.id });
+      changes.byId[o.id] = 'Rescheduled';
+    }
+    for (const p of gone) {
+      if (p.kind === 'planned' && p.cancelled) continue;
+      if (p.kind === 'current' || p.dateOn < now) changes.finished.push(p);
+      else changes.removed.push(p);
     }
     return changes;
   }
@@ -122,5 +154,5 @@
     return d.added.length + d.rescheduled.length + d.cancelled.length + d.updated.length + d.finished.length + d.removed.length;
   }
 
-  return { collectMunis, ingestFeeds, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges };
+  return { collectMunis, ingestFeeds, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom };
 });

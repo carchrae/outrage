@@ -14,7 +14,7 @@
   const $ = (sel) => document.querySelector(sel);
   const els = {
     header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
-    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), locate: $('#locate'),
+    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), sheet: $('#outage-dialog'), locate: $('#locate'),
   };
 
   const HOME_KEY = 'outage-finder.home';
@@ -31,13 +31,21 @@
 
   const state = {
     outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
-    home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], changeLog: [], changeLogAuto: false, showChangeLog: false, showSearch: false,
+    home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], changeLog: [], changeLogAuto: false, showSearch: false,
     alertsBusy: false, alertsMsg: '', showMore: false, installPrompt: null,
     current: [], currentError: '',
   };
 
-  /** Assign innerHTML only when it changes, so a render that produces the same page mutates nothing. */
-  function setHTML(el, html) { if (el.innerHTML !== html) el.innerHTML = html; }
+  /**
+   * Assign innerHTML only when it changes, so a render that produces the same page mutates nothing.
+   * Compared with what was last written rather than the live DOM, which the column fitting adjusts.
+   */
+  function setHTML(el, html) {
+    if (el._html === html) return;
+    el._html = html;
+    el.innerHTML = html;
+    if (html.includes('addresses') && window.OutageColumns) window.OutageColumns.schedule();
+  }
 
   function readJSON(store, key) { try { return JSON.parse(store.getItem(key) || 'null'); } catch (e) { return null; } }
   function writeJSON(store, key, val) {
@@ -211,7 +219,14 @@
     // In time order: what is happening now first, then by start time; match quality only breaks ties.
     hits.sort((a, b) => (b.muniMatch - a.muniMatch) || (a.o.dateOff - b.o.dateOff) || (b.match.level - a.match.level) || (b.match.streetScore - a.match.streetScore));
     const currentLabel = muniSet && muniSet.size === 1 ? [...muniSet][0].replace(/\b\w/g, (c) => c.toUpperCase()) : '';
-    if (hits.length) return { mode: 'address', q, items: hits, current, currentLabel };
+    const muniLabel = currentLabel || muniFilter || '';
+    // Planned outages elsewhere in the municipality that the results above do not already show.
+    const othersOf = (shown) => {
+      if (!muniSet || !muniSet.size) return [];
+      const ids = new Set(shown.map((i) => i.o.id));
+      return list.filter((o) => !ids.has(o.id) && inMuni(o)).map((o) => ({ o, match: null, muniMatch: true }));
+    };
+    if (hits.length) return { mode: 'address', q, items: hits, current, currentLabel, others: othersOf(hits), muniLabel };
 
     // Fallback: plain text search over the area description, notes and municipality.
     const words = state.query.toLowerCase().split(/[\s,]+/).filter((w) => w.length > 1);
@@ -219,7 +234,18 @@
       const hay = (o.parsed.text + ' ' + o.parsed.notes.join(' ') + ' ' + o.municipality + ' ' + o.cause).toLowerCase();
       return words.length && words.every((w) => hay.includes(w));
     });
-    return { mode: 'text', q, items: text.map((o) => ({ o, match: null, muniMatch: true })), current, currentLabel };
+    const items = text.map((o) => ({ o, match: null, muniMatch: true }));
+    return { mode: 'text', q, items, current, currentLabel, others: othersOf(items), muniLabel };
+  }
+
+  /**
+   * The municipality's other planned outages, listed below the address's own: each a summary with a chip saying it
+   * is not the address, and a "Show outage details" button that opens the whole card in a dialog.
+   */
+  function othersBlock(r, q, now) {
+    const where = r.muniLabel ? ` in ${esc(r.muniLabel)}` : '';
+    const chip = state.home && queryIsHome() ? 'Not your address' : 'Not this address';
+    return `<section class="others-section"><div class="results"><p class="group-head">Other planned outages${where}</p>${r.others.map((i) => card(i, q, now, null, { summary: true, chip })).join('')}</div></section>`;
   }
 
   /**
@@ -250,21 +276,65 @@
   function snapshotOf(items) { return M.snapshotOf(items); }
   function computeDiff(base, items, now) { return M.computeDiff(base, items, now); }
 
-  function diffLines(d) { return diffEntries(d).map((e) => e.line); }
 
   /** One {id, line, end} per change; `end` is when the outage ends (null if unknown), for pruning the change log. */
   function diffEntries(d) {
     const out = [];
     if (!d) return out;
-    const add = (id, line, end) => out.push({ id, line, end: Number.isFinite(end) ? end : null });
-    for (const o of d.added) add(o.id, o.kind === 'current' ? `Unplanned outage on your street, started ${fmtDateTime(o.dateOff)} (#${o.id})` : `New: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, o.dateOn);
-    for (const { o, was } of d.rescheduled) add(o.id, `Time changed: was ${fmtWindow(was.dateOff, was.dateOn)}, now ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, Math.max(o.dateOn, was.dateOn));
-    for (const o of d.cancelled) add(o.id, `Cancelled: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, o.dateOn);
-    for (const o of d.updated) add(o.id, o.kind === 'current' ? `Unplanned outage updated: ${o.dateOn ? 'restoration estimated ' + fmtDateTime(o.dateOn) : 'no restoration estimate yet'} (#${o.id})` : `Address list updated: ${fmtWindow(o.dateOff, o.dateOn)} (#${o.id})`, o.dateOn);
-    for (const p of d.removed) add(p.id, `No longer listed: ${fmtWindow(p.dateOff, p.dateOn)} (#${p.id})`, p.dateOn);
-    for (const p of d.finished) add(p.id, p.kind === 'current' ? `Unplanned outage resolved, started ${fmtDateTime(p.dateOff)} (#${p.id})` : `Finished: ${fmtWindow(p.dateOff, p.dateOn)} (#${p.id})`, p.dateOn);
+    const now = Date.now();
+    // Each line is "<chip> — <what changed>", optionally followed by a newline and a line of context. The chip
+    // text matches the chip the outage's card gets.
+    const add = (id, chip, text, detail, end) => out.push({ id, line: `${chip} — ${text}${detail ? '\n' + detail : ''}`, end: Number.isFinite(end) ? end : null });
+    const when = (x) => `${fmtWindow(x.dateOff, x.dateOn)} (${fmtDuration(x.dateOn - x.dateOff)})`;
+    const startsIn = (x) => (x.dateOff > now ? `starts ${fmtRelative(x.dateOff - now)}` : x.dateOn > now ? 'in progress now' : 'finished');
+    const people = (o) => (o.numCustomersOut == null ? '' : `${o.numCustomersOut < 5 ? 'fewer than 5' : fmtNum(o.numCustomersOut)} customers`);
+    // Cause, customers and anything BC Hydro noted, as one line of context for a planned outage.
+    const about = (o) => [o.cause, people(o)].concat(cardNotes(o).notes).filter(Boolean).join(' · ');
+    const shift = (from, to) => {
+      const ms = to - from;
+      if (!ms) return '';
+      const days = Math.round(Math.abs(ms) / 864e5);
+      return days >= 1 ? `${days} day${days === 1 ? '' : 's'} ${ms > 0 ? 'later' : 'earlier'}` : `${fmtDuration(Math.abs(ms))} ${ms > 0 ? 'later' : 'earlier'}`;
+    };
+    const streets = (text) => new Set(P.parseArea(text || '', state.munis).segments.map((x) => x.label));
+
+    for (const o of d.added) {
+      if (o.kind === 'current') {
+        add(o.id, 'New unplanned outage', `Power out since ${fmtDateTime(o.dateOff)}${o.dateOn ? `, expected back ${fmtDateTime(o.dateOn)}` : ', no restoration estimate yet'}`,
+          [o.cause, people(o), o.crewStatusDescr].filter(Boolean).join(' · '), o.dateOn);
+      } else add(o.id, 'New', `${when(o)}, ${startsIn(o)}`, about(o), o.dateOn);
+    }
+    for (const { o, was, wasId } of d.rescheduled) {
+      if (wasId) {
+        add(o.id, 'Rescheduled', `Moved from ${when(was)} to ${when(o)}, ${shift(was.dateOff, o.dateOff)}`, about(o), Math.max(o.dateOn, was.dateOn));
+      } else {
+        const moved = [shift(was.dateOff, o.dateOff) && `starts ${shift(was.dateOff, o.dateOff)}`, shift(was.dateOn, o.dateOn) && `ends ${shift(was.dateOn, o.dateOn)}`].filter(Boolean).join(', ');
+        add(o.id, 'Time changed', `Now ${when(o)}, was ${when(was)}${moved ? ` (${moved})` : ''}`, about(o), Math.max(o.dateOn, was.dateOn));
+      }
+    }
+    for (const o of d.cancelled) add(o.id, 'Now cancelled', `${when(o)} will not go ahead`, about(o), o.dateOn);
+    for (const o of d.updated) {
+      if (o.kind === 'current') {
+        add(o.id, 'Updated', `Unplanned outage since ${fmtDateTime(o.dateOff)}: ${o.dateOn ? 'power expected back ' + fmtDateTime(o.dateOn) : 'no restoration estimate yet'}`,
+          [o.crewStatusDescr, people(o)].filter(Boolean).join(' · '), o.dateOn);
+        continue;
+      }
+      // Which streets came and went, from the listing's text then and now.
+      const prev = d.prevText && d.prevText[o.id];
+      const before = streets(prev), after = new Set(o.parsed.segments.map((x) => x.label));
+      const added = [...after].filter((x) => !before.has(x)), removed = [...before].filter((x) => !after.has(x));
+      const list = (a) => a.slice(0, 4).join(', ') + (a.length > 4 ? ` and ${a.length - 4} more` : '');
+      const what = prev ? [added.length && `added ${list(added)}`, removed.length && `removed ${list(removed)}`].filter(Boolean).join('; ') : '';
+      add(o.id, 'Street list changed', `${when(o)}: ${what || 'BC Hydro reworded the listing'}`, about(o), o.dateOn);
+    }
+    for (const p of d.removed) add(p.id, 'No longer listed', `${when(p)} was taken off BC Hydro's list before it happened, so it is probably cancelled`, '', p.dateOn);
+    for (const p of d.finished) {
+      if (p.kind === 'current') add(p.id, 'Power restored', `Unplanned outage from ${fmtDateTime(p.dateOff)} is over`, '', p.dateOn);
+      else add(p.id, 'Finished', `${when(p)} has ended`, '', p.dateOn);
+    }
     return out;
   }
+
 
 
 
@@ -308,21 +378,58 @@
     if (edit.clear) log.entries = [];
     if ('autoClear' in edit) log.autoClear = edit.autoClear;
     writeJSON(localStorage, CHANGES_KEY, log);
-    if (edit.clear) state.showChangeLog = false;
     render(); // re-runs updateChangeLog, which applies auto-clear straight away
   }
 
   /** The change log behind a button, shown only when it holds more than the "since your last visit" list. */
-  function changeLogControl(base) {
-    const entries = state.changeLog || [];
-    const since = base && base.items && !base.first ? base.at : Infinity;
-    if (!entries.some((e) => e.at <= since)) return '';
-    const button = `<p class="home-more"><button type="button" class="btn small" id="home-changelog">${state.showChangeLog ? 'Hide history' : `Show history (${entries.length} change${entries.length === 1 ? '' : 's'})`}</button></p>`;
-    if (!state.showChangeLog) return button;
-    const rows = entries.slice().reverse().map((e) => `<li><span class="muted">${esc(fmtDateTime(e.at))}:</span> ${esc(e.line)}</li>`).join('');
-    const controls = `<p class="changelog-controls"><label><input type="checkbox" id="changelog-auto"${state.changeLogAuto ? ' checked' : ''}> Automatically clear changes a week after the outage ends</label> <button type="button" class="btn small" id="changelog-clear">Clear history</button></p>`;
-    return `${button}<div class="changes log"><strong>Changes seen for this address:</strong><ul>${rows}</ul>${controls}</div>`;
+  /**
+   * One change as a chip and plain text: "Rescheduled — Sat, Nov 7 ..." becomes [Rescheduled] Sat, Nov 7 ....
+   * Lines saved before the chips existed ("Finished: ...") are split the same way; anything else is shown as is.
+   */
+  function changeRow(line, at, id) {
+    const m = line.match(/^(.+?)(?: — |: )([\s\S]+)$/);
+    // The chip (and, in the history, when it was seen) on its own row above the text, with a button for the
+    // outage's details while BC Hydro still lists it.
+    const chip = m ? `<span class="badge new">${esc(m[1])}</span>` : '';
+    const when = at ? `<span class="muted">${esc(fmtDateTime(at))}</span>` : '';
+    const listed = id != null && state.outages.concat(state.current).some((o) => String(o.id) === String(id));
+    const more = listed ? `<button type="button" class="btn small" data-details="${esc(String(id))}">Show outage details</button>` : '';
+    const head = chip || when || more ? `<span class="change-head">${chip}${when}${more}</span>` : '';
+    const [text, detail] = (m ? m[2] : line).split('\n');
+    return `<li>${head}${esc(text)}${detail ? `<span class="change-detail">${esc(detail)}</span>` : ''}</li>`;
   }
+
+  /** What changed for the saved address: since the last visit (from the baseline), and earlier (from the log). */
+  function changesSeen() {
+    const base = state.baseline;
+    const lines = state.diff && base && base.items ? diffEntries(state.diff) : [];
+    const since = base && base.items && !base.first ? base.at : Infinity;
+    const earlier = (state.changeLog || []).filter((e) => e.at <= since);
+    return { base, lines, earlier };
+  }
+
+  /** The button under the alerts button that opens the changes dialog; only when there is something to show. */
+  function changesButton() {
+    const { lines, earlier } = changesSeen();
+    if (!lines.length && !earlier.length) return '';
+    const label = lines.length ? `${lines.length} change${lines.length === 1 ? '' : 's'}` : 'Change history';
+    return `<button type="button" class="btn small changes-btn${lines.length ? ' new' : ''}" id="changes-open">${label}</button>`;
+  }
+
+  /** The changes dialog: changes since the last visit, then the earlier history with its clearing options. */
+  function openChanges({ replace = false } = {}) {
+    const { base, lines, earlier } = changesSeen();
+    let html = '';
+    if (lines.length) html += `<div class="changes"><strong>${lines.length} change${lines.length === 1 ? '' : 's'} since ${esc(fmtDateTime(base.at))}</strong><ul>${lines.map((l) => changeRow(l.line, null, l.id)).join('')}</ul></div>`;
+    else if (base && base.items && !base.first) html += `<p class="hint">No changes since ${esc(fmtDateTime(base.at))}.</p>`;
+    if (earlier.length) {
+      const rows = earlier.slice().reverse().map((e) => changeRow(e.line, e.at, e.id)).join('');
+      const controls = `<p class="changelog-controls"><label><input type="checkbox" id="changelog-auto"${state.changeLogAuto ? ' checked' : ''}> Automatically clear changes a week after the outage ends</label> <button type="button" class="btn small" id="changelog-clear">Clear history</button></p>`;
+      html += `<div class="changes log"><strong>Earlier changes</strong><ul>${rows}</ul>${controls}</div>`;
+    }
+    openSheet('Changes', `<div class="sheet-pad">${html || '<p class="hint">No changes seen yet.</p>'}</div>`, { replace });
+  }
+
 
   /** Long-term record of every outage ever seen for the saved address. Kept per address. */
   function updateHistory(items, now) {
@@ -389,7 +496,7 @@
       writeJSON(localStorage, SNAP_KEY, null);
       writeJSON(sessionStorage, BASE_KEY, null);
       writeJSON(localStorage, CHANGES_KEY, null);
-      state.baseline = undefined; state.diff = null; state.history = []; state.changeLog = []; state.showChangeLog = false; state.alertsMsg = '';
+      state.baseline = undefined; state.diff = null; state.history = []; state.changeLog = []; state.alertsMsg = '';
     }
     render();
     if (A && changed) A.sync(state.home, state.munis).then((c) => { if (c) render(); }); // moves an existing alert subscription to the new street
@@ -398,7 +505,7 @@
 
   function forgetHome() {
     if (A) A.disable();
-    state.home = null; state.baseline = undefined; state.diff = null; state.history = []; state.changeLog = []; state.showChangeLog = false; state.showSearch = false; state.alertsMsg = '';
+    state.home = null; state.baseline = undefined; state.diff = null; state.history = []; state.changeLog = []; state.showSearch = false; state.alertsMsg = '';
     writeJSON(localStorage, HOME_KEY, null); writeJSON(localStorage, SNAP_KEY, null); writeJSON(sessionStorage, BASE_KEY, null); writeJSON(localStorage, HIST_KEY, null); writeJSON(localStorage, CHANGES_KEY, null);
     state.query = ''; els.q.value = ''; state.muni = DEFAULT_MUNI; els.muni.value = state.muni;
     writeState();
@@ -476,29 +583,16 @@
   }
 
   /** The matched outages' times, one line each; outages happening now are in the live box instead. */
+  /**
+   * The saved address's planned outages in the panel: each in the card format (chips, time, place, BC Hydro note)
+   * without the street section, since the panel is about the saved street. Outages happening now are in the live box.
+   */
   function upcomingList(matches, now) {
-    const items = matches.strong.filter((i) => !isLive(i.o, now));
+    const items = matches.strong.filter((i) => !isLive(i.o, now) && i.o.kind === 'planned');
     if (!items.length) return '';
-    const rows = items.map(({ o, match }) => {
-      const tag = state.diff && state.diff.byId[o.id] ? ` <span class="badge new">${esc(state.diff.byId[o.id])}</span>` : '';
-      const where = `<span class="muted">${esc(match.segment.label)}</span>`;
-      if (o.kind === 'current') {
-        const restore = o.dateOn ? `, estimated restoration ${esc(fmtDateTime(o.dateOn))}` : ', no restoration estimate yet';
-        return `<li><span class="danger"><b>Unplanned outage</b> out since ${esc(fmtDateTime(o.dateOff))}${restore}</span>${tag}<br>${where}</li>`;
-      }
-      const st = statusOf(o, now);
-      let when = `<b>${esc(fmtWindow(o.dateOff, o.dateOn))}</b>`;
-      let sub = esc(fmtDuration(o.dateOn - o.dateOff));
-      if (st === 'upcoming') sub += ` · starts ${esc(fmtRelative(o.dateOff - now))}`;
-      else if (st === 'in progress') sub += ` · <span class="danger">in progress now</span>`;
-      else if (st === 'cancelled') { when = `<s>${when}</s>`; sub += ' · cancelled'; }
-      else sub += ' · finished';
-      // Short notes ("Rescheduled from Oct 6") are worth a line; long boilerplate is on the card below.
-      const note = o.parsed.notes.length && o.parsed.notes[0].length <= 60 ? ` · ${esc(o.parsed.notes[0])}` : '';
-      return `<li>${when}${tag}<span class="sub">${sub}</span><span class="sub">${where}${note}</span></li>`;
-    });
-    return `<ul class="upcoming">${rows.join('')}</ul>`;
+    return `<div class="upcoming">${items.map((i) => card(i, matches.q, now, null, { summary: true })).join('')}</div>`;
   }
+
 
   function renderHome(matches, now) {
     if (!state.home) {
@@ -525,21 +619,15 @@
 </div>`);
       return;
     }
-    const d = state.diff;
     const summary = summaryFor(matches, state.home.muni, 'your');
 
-    let changes = '';
-    const base = state.baseline;
-    if (d && base && base.items) {
-      const lines = diffLines(d).map(esc);
-      const since = `since ${esc(fmtDateTime(base.at))}`;
-      if (lines.length) changes = `<div class="changes"><strong>${lines.length} change${lines.length === 1 ? '' : 's'} ${since}:</strong><ul>${lines.map((l) => `<li>${l}</li>`).join('')}</ul></div>`;
-      else if (!base.first) changes = `<p class="hint">No changes ${since}.</p>`;
-    }
-
     const headline = panelTitle(matches, now);
-    const more = `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>`;
-    const button = titleButton();
+    // Each outage in the summary has its own "Show outage details" button; this one is for hiding them again, or
+    // for showing them when nothing is in the summary (an outage happening now is in the live box instead).
+    const inSummary = matches.strong.some((i) => !isLive(i.o, now) && i.o.kind === 'planned');
+    const more = state.showMore || !inSummary ? `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>` : '';
+    // Alerts (or Install), with what changed in a dialog behind a button underneath.
+    const button = titleButton() + changesButton();
     const install = button ? `<span class="install">${button}</span>` : '';
     setHTML(els.home, `<div class="home-card">
   <div class="title-row"><div><h2 class="home-title ${headline.cls}">${headline.text}</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
@@ -547,12 +635,17 @@
   ${liveStatus(matches, now)}
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
-  ${changes}
-  ${changeLogControl(base)}
   ${alertsControl()}
   ${more}
 </div>
-${state.showMore ? '' : nearbyBox(matches, now)}`);
+${state.showMore ? '' : nearbyBox(matches, now)}
+${homeOthers(now)}`);
+  }
+
+  /** The municipality's other planned outages, under the address panel; on show from page load, details open or not. */
+  function homeOthers(now) {
+    const r = search();
+    return r.others && r.others.length ? othersBlock(r, r.q, now) : '';
   }
 
   /** What the panel heading says: the state of the saved street in two words. */
@@ -621,6 +714,7 @@ ${state.showMore ? '' : nearbyBox(matches, now)}`);
     } else {
       parts.push(...r.items.map((i) => card(i, r.q, now)));
     }
+    if (r.others && r.others.length && !atHome) parts.push(othersBlock(r, r.q, now)); // at home it sits under the address panel
     if (atHome) parts.push(renderHistory(now));
     setHTML(els.results, parts.join(''));
     if (atHome) setHTML(els.status, '');
@@ -654,8 +748,11 @@ ${state.showMore ? '' : nearbyBox(matches, now)}`);
     const st = A.status();
     const on = st === 'on';
     const tp = on ? A.topics() : [];
-    const label = on ? (tp.includes('muni') ? (tp.includes('street') ? 'Alerts: street + town' : 'Alerts: town') : 'Alerts on') : st === 'blocked' ? 'Alerts blocked' : 'Alerts off';
-    return `<button type="button" class="btn small bell${on ? ' on' : ''}" id="alerts-toggle" aria-pressed="${on}" title="${on ? 'Turn alerts off' : 'Turn alerts on'}">${on ? BELL_ON : BELL_OFF}<span>${label}</span></button>`;
+    const label = on ? 'Alerts on' : st === 'blocked' ? 'Alerts blocked' : 'Alerts off';
+    // What the alerts cover goes in a chip under the button, keeping the button small.
+    const scope = !on ? '' : tp.includes('muni') ? (tp.includes('street') ? 'street + town' : 'town') : tp.includes('street') ? 'street' : '';
+    const chip = scope ? `<span class="alerts-scope">${scope}</span>` : '';
+    return `<button type="button" class="btn small bell${on ? ' on' : ''}" id="alerts-toggle" aria-pressed="${on}" title="${on ? 'Change or turn off alerts' : 'Turn alerts on'}">${on ? BELL_ON : BELL_OFF}<span>${label}</span></button>${chip}`;
   }
 
   /** The bell was pressed: turn alerts off, or open the dialog that turns them on. */
@@ -828,35 +925,41 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     else setHTML(els.results, html);
   }
 
-  function card(item, q, now, changeTag) {
+  /** A planned outage. `summary` is the address panel's version: no match chips, streets, original text or footer. */
+  function card(item, q, now, changeTag, { summary = false, chip = '' } = {}) {
     if (item.o.kind === 'current') return currentCard(item, q, now, changeTag);
     const o = item.o;
     const st = statusOf(o, now);
     const m = item.match;
     const badges = [];
     if (changeTag) badges.push(`<span class="badge new">${esc(changeTag)}</span>`);
-    if (m) {
+    if (m && !summary) {
       if (m.numberListed === true) { if (m.streetScore < 2) badges.push('<span class="badge hit">Address listed (similar street name)</span>'); }
       else if (m.numberListed === false) badges.push(`<span class="badge warn">Street listed, but ${q.number} is not in the listed numbers</span>`);
       else if (m.mention) badges.push('<span class="badge warn">Possible: street named in the notice</span>');
       else badges.push(`<span class="badge ${m.streetScore >= 2 ? 'hit' : ''}">${m.streetScore >= 2 ? 'Street listed' : 'Similar street name'}</span>`);
       if (!item.muniMatch) badges.push(`<span class="badge muted">${esc(o.municipality)}, not ${esc(state.muni || q.muni)}</span>`);
     }
+    if (chip) badges.push(`<span class="badge muted">${esc(chip)}</span>`);
     badges.push(statusBadge(o, st, now));
-    if (o.parsed.flags.rescheduled && !o.parsed.flags.cancelled) badges.push('<span class="badge warn">Rescheduled</span>');
+    const notes = cardNotes(o);
+    if (o.parsed.flags.rescheduled && !o.parsed.flags.cancelled) badges.push(`<span class="badge warn">Rescheduled${notes.from ? ' from ' + esc(notes.from) : ''}</span>`);
     if (o.parsed.flags.continued) badges.push('<span class="badge muted">Continuation of another listing</span>');
 
-    const segs = addressList(o, m, q);
+    // What BC Hydro wrote about the work (cause and notes), in one labelled box just above the full street list.
+    const bcNote = `<p class="bc-note-head">BC Hydro note</p><div class="bc-note"><p class="bc-cause">${esc(o.cause || 'Planned work')}</p>${notes.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}</div>`;
+    const segs = summary ? bcNote : addressList(o, m, q, bcNote);
 
     const customers = o.numCustomersOut < 5 ? 'fewer than 5' : fmtNum(o.numCustomersOut);
-    const hitClass = m && m.numberListed === true && item.muniMatch ? ' hit' : '';
-    return `
-<article class="card${hitClass}${st === 'cancelled' ? ' cancelled' : ''}" id="o-${o.id}">
+    const hitClass = m && m.numberListed === true && item.muniMatch && !summary ? ' hit' : '';
+    const top = `
+<article class="card${hitClass}${st === 'cancelled' ? ' cancelled' : ''}${summary ? ' summary' : ''}"${summary ? '' : ` id="o-${o.id}"`}>
   <div class="card-top">${badges.join('')}</div>
   <h3 class="when">${fmtWindow(o.dateOff, o.dateOn)} <span class="dur">(${fmtDuration(o.dateOn - o.dateOff)})</span></h3>
-  <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Planned work')}</p>
-  ${o.parsed.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}
-  ${segs}
+  <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'}</p>
+  ${segs}`;
+    if (summary) return top + `\n  <p class="home-more"><button type="button" class="btn small" data-details="${o.id}">Show outage details</button></p>\n</article>`;
+    return top + `
   <details class="raw"><summary>Original area text from BC Hydro</summary><pre>${esc(o.parsed.text)}</pre></details>
   ${o.related.length ? `<p class="related">Same time window in ${esc(o.municipality)} (likely the same job):${o.related.map((id) => `<button type="button" data-goto="${id}">#${id}</button>`).join('')}</p>` : ''}
   <p class="card-foot"><span>Outage #${o.id}</span><span>Listing updated ${fmtDateTime(o.lastUpdated)}</span><a href="${OFFICIAL}#planned-${o.regionId}" rel="noopener" target="_blank">View region on bchydro.com</a></p>
@@ -892,21 +995,84 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
    * The outage's street list. When the card is the result of an address match, only the segments on that
    * street are shown and the rest sit behind a toggle; otherwise every segment is listed.
    */
-  function addressList(o, m, q) {
-    const item = (s, isMatch) => {
+  const NAME_COL_MAX = 30; // a longer street name wraps rather than forcing a single column
+  const NUM_COL_MAX = 13; // longest house-number text kept in the number column ("12345-12399" fits)
+
+  /** "101-113 Baker Rd" -> { nums: "101-113", name: "Baker Rd" }; labels without leading numbers have nums "". */
+  function splitLabel(s) {
+    if (s.street && s.label.endsWith(s.street) && s.label.length > s.street.length) {
+      return { nums: s.label.slice(0, s.label.length - s.street.length).trim(), name: s.street };
+    }
+    return { nums: '', name: s.label };
+  }
+
+  /**
+   * A planned outage's notes, sorted out so nothing repeats: the date it was rescheduled from goes in the
+   * Rescheduled chip (shortened to "Nov 7"); bare "CANCELLED" markers are dropped, the Cancelled chip says it.
+   * Everything else BC Hydro wrote ("Overnight outage", "Parts of Bowen Island") is kept as a note.
+   */
+  function cardNotes(o) {
+    let from = '';
+    const rest = [];
+    for (const note of o.parsed.notes) {
+      for (const raw of note.split(/\s*\|\s*/)) {
+        const t = raw.replace(/\*+/g, '').replace(/\s+/g, ' ').trim().replace(/\.$/, '');
+        if (!t) continue;
+        const r = t.match(/^(?:outage\s+)?resched\w*\b.*?\bfrom\s+(.+)$/i);
+        if (r && !from) {
+          const d = r[1].match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})/i);
+          from = d ? `${d[1][0].toUpperCase()}${d[1].slice(1).toLowerCase()} ${Number(d[2])}` : r[1];
+          continue;
+        }
+        if (/^(cancel(l?ed)?|resched\w*)$/i.test(t)) continue; // the chips already say so
+        const c = t.match(/^cancel(?:l?ed)?\s*[-–:]?\s*(.+)$/i); // "CANCELLED - to be rescheduled"
+        const text = c ? c[1][0].toUpperCase() + c[1].slice(1) : t;
+        rest.push(text);
+      }
+    }
+    return { from, notes: rest };
+  }
+
+  /** The streets of an outage; `after` (planned outages' BC Hydro note) goes below the matching streets. */
+  function addressList(o, m, q, after = '') {
+    const item = (s, isMatch, numW) => {
       const loc = s.locality && s.locality !== o.municipality ? ` <span class="loc">(${esc(s.locality)})</span>` : '';
       const qual = s.qualifier ? ` <span class="qual">(${esc(s.qualifier)})</span>` : '';
-      return `<li class="${isMatch ? 'match' : ''}">${esc(s.label)}${qual}${loc}</li>`;
+      const cls = isMatch ? 'match' : '';
+      if (!numW) return `<li class="${cls}">${esc(s.label)}${qual}${loc}</li>`;
+      // House numbers right-aligned in their own column so the street names line up; a long list goes under the name.
+      const { nums, name } = splitLabel(s);
+      const short = nums.length <= NUM_COL_MAX;
+      return `<li class="${cls}"><span class="num">${short ? esc(nums) : ''}</span><span class="name">${esc(name)}${qual}${loc}${short || !nums ? '' : `<span class="nums">${esc(nums)}</span>`}</span></li>`;
     };
+    /** A list of streets; with any short house numbers present, laid out with a number column as wide as the widest. */
+    const list = (segs, isMatch) => {
+      const numW = Math.max(0, ...segs.map((s) => splitLabel(s).nums.length).filter((n) => n <= NUM_COL_MAX));
+      // Columns sized to the entries, so the browser fits as many as it can with few names wrapping. In a longer
+      // list the longest fifth may wrap rather than force fewer columns. Lengths are in ch, the width of "0".
+      const extra = (s) => (s.qualifier ? s.qualifier.length + 3 : 0) + (s.locality && s.locality !== o.municipality ? s.locality.length + 3 : 0);
+      const lens = segs.map((s) => (numW ? splitLabel(s).name : s.label).length + extra(s)).sort((a, b) => a - b);
+      const nameW = Math.min(NAME_COL_MAX, Math.max(4, lens.length > 6 ? lens[Math.floor(lens.length * 0.8)] : lens[lens.length - 1]));
+      // Letters average about 0.85 of a "0", so names need less than their length in ch.
+      const vars = `--namew:${Math.round(nameW * 8.5) / 10}ch${numW ? `;--numw:${numW}ch` : ''}`;
+      return `<ul class="addresses${numW ? ' aligned' : ''}" style="${vars}">${segs.map((s) => item(s, isMatch(s), numW)).join('')}</ul>`;
+    };
+    const box = (inner) => `<div class="addr-box">${inner}</div>`;
+    // Alphabetical by street name, then by house number, so a street is easy to find down the columns.
+    const byStreet = (a, b) => (a.street || a.label).localeCompare(b.street || b.label, 'en', { sensitivity: 'base' }) || a.label.localeCompare(b.label, 'en', { numeric: true });
     // A mention found only in the notice text is not one of the parsed streets; show it first.
-    const all = m && m.mention ? [m.segment].concat(o.parsed.segments) : o.parsed.segments;
-    if (!all.length) return '';
-    if (!m) return `<ul class="addresses">${all.map((s) => item(s, false)).join('')}</ul>`;
+    const sorted = o.parsed.segments.slice().sort(byStreet);
+    const all = m && m.mention ? [m.segment].concat(sorted) : sorted;
+    if (!all.length) return after;
+    if (!m) return box(list(all, () => false)) + after;
     const onStreet = all.filter((s) => s === m.segment || (q && q.key && P.streetScore(q, s) >= 2));
-    const rest = all.filter((s) => !onStreet.includes(s));
-    let html = `<ul class="addresses">${onStreet.map((s) => item(s, s === m.segment)).join('')}</ul>`;
-    if (rest.length) {
-      html += `<details class="more-streets"><summary>${rest.length} other street${rest.length === 1 ? '' : 's'} in this outage</summary><ul class="addresses">${rest.map((s) => item(s, false)).join('')}</ul></details>`;
+    // Above the matching streets, say how they matched.
+    const how = m.numberListed === true ? 'Your address is listed' : m.mention ? 'Your street is named in the notice' : m.streetScore >= 2 ? 'Your street is listed' : 'Similar street name';
+    let html = `<p class="addr-label${m.streetScore >= 2 && !m.mention ? '' : ' weak'}">${how}</p>${box(list(onStreet, (s) => s === m.segment))}`;
+    html += after;
+    // The full list keeps the matching streets in their alphabetical place, in bold.
+    if (all.length > onStreet.length) {
+      html += `<details class="more-streets"><summary>Streets in this outage (${all.length})</summary>${box(list(all, (s) => onStreet.includes(s)))}</details>`;
     }
     return html;
   }
@@ -925,7 +1091,13 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   const tFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true });
   const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
 
-  function fmtTime(ms) { return tFmt.format(new Date(ms)).replace(/\./g, '').replace(/\s?([ap])m/i, ' $1.m.'); }
+  /** Short time: "7am", "9:30pm". */
+  function fmtTime(ms) {
+    const p = tFmt.formatToParts(new Date(ms));
+    const v = (t) => (p.find((x) => x.type === t) || {}).value || '';
+    const min = v('minute');
+    return `${v('hour')}${min && min !== '00' ? ':' + min : ''}${v('dayPeriod').replace(/[.\s]/g, '').toLowerCase()}`;
+  }
   function fmtDay(ms) {
     const d = new Date(ms);
     const sameYear = d.getFullYear() === new Date().getFullYear();
@@ -1036,17 +1208,100 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   if ('geolocation' in navigator && HAS_GEOCODER) els.locate.hidden = false;
   els.locate.addEventListener('click', () => locate());
   els.clear.addEventListener('click', () => { state.query = ''; state.muni = DEFAULT_MUNI; els.q.value = ''; els.muni.value = state.muni; writeState(); render(); els.q.focus(); });
-  els.results.addEventListener('click', (e) => {
-    const chip = e.target.closest('[data-muni]');
-    if (chip) { state.muni = chip.dataset.muni; els.muni.value = state.muni; writeState(); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  /** Clicks on outage cards' buttons (details, same-time-window links), in both the results and the address panel. */
+  function cardClick(e) {
+    const details = e.target.closest('[data-details]');
+    if (details) { showDetails(details.dataset.details); return true; }
     const go = e.target.closest('[data-goto]');
     if (go) {
       let target = document.getElementById('o-' + go.dataset.goto);
       if (!target) { state.past = true; els.past.checked = true; state.muni = ''; els.muni.value = ''; state.query = ''; els.q.value = ''; writeState(); render(); target = document.getElementById('o-' + go.dataset.goto); }
       if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); target.classList.add('hit'); }
+      return true;
     }
+    return false;
+  }
+  els.results.addEventListener('click', (e) => {
+    if (cardClick(e)) return;
+    const chip = e.target.closest('[data-muni]');
+    if (chip) { state.muni = chip.dataset.muni; els.muni.value = state.muni; writeState(); render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
   });
+  /**
+   * One outage in a dialog (full screen on phones): the whole card, streets and all. An outage listing the saved
+   * address keeps its match (your street in green); any other, such as one of the municipality's others, has none.
+   */
+  function showDetails(id) {
+    const now = Date.now();
+    const matches = state.home ? homeMatches(now) : null;
+    let item = matches && matches.strong.find((i) => String(i.o.id) === String(id));
+    if (!item) {
+      const o = state.outages.concat(state.current).find((x) => String(x.id) === String(id));
+      if (!o) return;
+      item = { o, match: null, muniMatch: true };
+    }
+    const q = matches ? matches.q : P.parseQuery(state.query, state.munis);
+    const tag = state.diff ? state.diff.byId[item.o.id] : null;
+    openSheet('Outage details', `<div class="results">${card(item, q, now, tag)}</div>`);
+  }
+
+  /*
+   * The dialog (full screen on phones) holds a stack of pages, e.g. Changes, then one outage's details from it.
+   * Each page has a history entry, so back (button, key or gesture) returns to the previous page and finally
+   * closes the dialog; Close and Escape go back past all of them at once.
+   */
+  const sheetPages = [];
+  let sheetClosingAll = false;
+  function drawSheet() {
+    const { title, body } = sheetPages[sheetPages.length - 1];
+    els.sheet.setAttribute('aria-label', title);
+    const back = sheetPages.length > 1 ? `<button type="button" class="btn small" id="sheet-back">Back</button>` : '';
+    els.sheet.innerHTML = `<div class="sheet-bar"><span class="sheet-left">${back}</span><strong>${esc(title)}</strong><span class="sheet-right"><button type="button" class="btn small" id="sheet-close">Close</button></span></div>
+<div class="sheet-body wrap">${body}</div>`;
+    els.sheet.scrollTop = 0;
+    if (window.OutageColumns) window.OutageColumns.fitAll(els.sheet);
+  }
+  /** Open the dialog on a page, or add a page to it; `replace` redraws the current page instead (after an edit). */
+  function openSheet(title, body, { replace = false } = {}) {
+    if (replace && sheetPages.length) { sheetPages[sheetPages.length - 1] = { title, body }; drawSheet(); return; }
+    sheetPages.push({ title, body });
+    try { history.pushState({ outageSheet: sheetPages.length }, ''); } catch (e) { /* ignore */ }
+    if (!els.sheet.hasAttribute('open')) {
+      if (typeof els.sheet.showModal === 'function') els.sheet.showModal(); else els.sheet.setAttribute('open', '');
+    }
+    drawSheet();
+  }
+  /** Close the whole dialog: step history back past its pages; popstate then closes it. */
+  function closeSheet() {
+    if (!sheetPages.length) return;
+    sheetClosingAll = true;
+    history.go(-sheetPages.length);
+  }
+  function dismissSheet() {
+    sheetPages.length = 0;
+    sheetClosingAll = false;
+    if (typeof els.sheet.close === 'function') { if (els.sheet.open) els.sheet.close(); } else els.sheet.removeAttribute('open');
+    els.sheet.innerHTML = '';
+  }
+  els.sheet.addEventListener('cancel', (e) => { e.preventDefault(); closeSheet(); }); // Escape
+  window.addEventListener('popstate', () => {
+    if (!sheetPages.length) return;
+    if (sheetClosingAll || sheetPages.length === 1) { dismissSheet(); return; }
+    sheetPages.pop();
+    drawSheet();
+  });
+  els.sheet.addEventListener('click', (e) => {
+    if (e.target.closest('#sheet-close')) { closeSheet(); return; }
+    if (e.target.closest('#sheet-back')) { history.back(); return; }
+    const details = e.target.closest('[data-details]');
+    if (details) { showDetails(details.dataset.details); return; }
+    if (e.target.id === 'changelog-auto') { editChangeLog({ autoClear: e.target.checked }); openChanges({ replace: true }); return; }
+    if (e.target.id === 'changelog-clear') { if (window.confirm('Clear the change history for this address?')) { editChangeLog({ clear: true }); openChanges({ replace: true }); } return; }
+    // "Same time window" links point at cards on the page: close first, then go there.
+    if (e.target.closest('[data-goto]')) { closeSheet(); cardClick(e); }
+  });
+
   els.home.addEventListener('click', (e) => {
+    if (cardClick(e)) return;
     const b = e.target.closest('button');
     const id = b ? b.id : e.target.id;
     if (id === 'install-ask') startInstall();
@@ -1067,9 +1322,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       A.disable().then(() => render());
       render();
     }
-    else if (id === 'home-changelog') { state.showChangeLog = !state.showChangeLog; render(); }
-    else if (id === 'changelog-auto') editChangeLog({ autoClear: e.target.checked });
-    else if (id === 'changelog-clear') { if (window.confirm('Clear the change history for this address?')) editChangeLog({ clear: true }); }
+    else if (id === 'changes-open') openChanges();
     else if (id === 'home-more') {
       state.showMore = !state.showMore; render();
       if (state.showMore) els.results.scrollIntoView({ behavior: 'smooth', block: 'start' });

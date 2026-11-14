@@ -26,3 +26,16 @@ test('computeDiff flags new, rescheduled, cancelled, removed and finished outage
   assert.deepEqual(d.removed.map((x) => x.id), ['4']);
   assert.equal(M.countChanges(d), 5);
 });
+
+test('computeDiff reports a relisted outage as rescheduled, and a cancelled one dropping off as nothing', () => {
+  const day = (d, h) => Date.UTC(2026, 10, d, h + 8); // Pacific time
+  const home = { address: '5 Adams Rd', muni: 'B' };
+  const before = M.ingestFeeds(feed([o(10, '1-9 Adams Rd', 'B', { dateOff: day(7, 8), dateOn: day(7, 16) }), o(11, '<b>Cancelled</b><br/>1-9 Adams Rd', 'B', { dateOff: day(8, 8), dateOn: day(8, 16) })], ['B']), null);
+  const snap = { at: 1, items: M.snapshotOf(M.homeMatches(before.outages, before.munis, home, day(6, 0), true).strong) };
+  const after = M.ingestFeeds(feed([o(20, '<b>*Rescheduled from November 7, 2026*</b><br/>1-9 Adams Rd', 'B', { dateOff: day(19, 8), dateOn: day(19, 16) })], ['B']), null);
+  const now = day(14, 0);
+  const d = M.computeDiff(snap, M.homeMatches(after.outages, after.munis, home, now, true).strong, now);
+  assert.deepEqual(d.rescheduled.map((x) => [x.o.id, x.wasId]), [[20, '10']]);
+  assert.equal(d.byId[20], 'Rescheduled');
+  assert.deepEqual([d.added.length, d.finished.length, d.removed.length], [0, 0, 0]);
+});
