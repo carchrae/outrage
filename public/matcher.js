@@ -93,7 +93,24 @@
   }
 
   const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-  const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', month: 'numeric', day: 'numeric' });
+  /*
+   * British Columbia time. BC stopped changing clocks in 2026: since 2026-03-08 it stays on UTC-7 all year
+   * (IANA tzdata 2026b). Older time zone data (an outdated phone, or a Node build with old ICU) still turns the
+   * clocks back on 2026-11-01, an hour wrong. That is detected by asking for Vancouver's offset after that date;
+   * when outdated, times from the change on are formatted in a fixed UTC-7 zone instead.
+   */
+  const BC_PERMANENT = Date.UTC(2026, 2, 8, 10); // 2am PST, Sunday Mar 8 2026
+  const tzOutdated = (() => {
+    try { return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Vancouver', hour: 'numeric', hourCycle: 'h23' }).format(new Date(Date.UTC(2026, 11, 1, 20))) === '12'; } catch (e) { return false; }
+  })();
+  /** Like new Intl.DateTimeFormat('en-CA', options) in BC time, correct even with outdated time zone data. */
+  function bcFormat(options) {
+    const live = new Intl.DateTimeFormat('en-CA', Object.assign({}, options, { timeZone: 'America/Vancouver' }));
+    const fixed = tzOutdated ? new Intl.DateTimeFormat('en-CA', Object.assign({}, options, { timeZone: 'Etc/GMT+7' })) : live;
+    const pick = (d) => (+d >= BC_PERMANENT ? fixed : live);
+    return { format: (d) => pick(d).format(d), formatToParts: (d) => pick(d).formatToParts(d) };
+  }
+  const dayFmt = bcFormat({ month: 'numeric', day: 'numeric' });
 
   /** The day a listing says it was rescheduled from ("*Rescheduled from November 7, 2026*"), as "11-7"; '' if none. */
   function rescheduledFrom(o) {
@@ -154,5 +171,5 @@
     return d.added.length + d.rescheduled.length + d.cancelled.length + d.updated.length + d.finished.length + d.removed.length;
   }
 
-  return { collectMunis, ingestFeeds, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom };
+  return { collectMunis, ingestFeeds, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
 });

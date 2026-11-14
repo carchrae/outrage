@@ -167,9 +167,26 @@ function firstStreet(o, munis) {
 
 // ---------------------------------------------------------------- notification text
 
-const TZ = 'America/Vancouver';
-const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' });
-const timeFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+// Same as bcFormat in public/matcher.js: the function's Node may carry time zone data from before BC's change.
+/*
+ * British Columbia time. BC stopped changing clocks in 2026: since 2026-03-08 it stays on UTC-7 all year
+ * (IANA tzdata 2026b). Older time zone data (an outdated phone, or a Node build with old ICU) still turns the
+ * clocks back on 2026-11-01, an hour wrong. That is detected by asking for Vancouver's offset after that date;
+ * when outdated, times from the change on are formatted in a fixed UTC-7 zone instead.
+ */
+const BC_PERMANENT = Date.UTC(2026, 2, 8, 10); // 2am PST, Sunday Mar 8 2026
+const tzOutdated = (() => {
+  try { return new Intl.DateTimeFormat('en-US', { timeZone: 'America/Vancouver', hour: 'numeric', hourCycle: 'h23' }).format(new Date(Date.UTC(2026, 11, 1, 20))) === '12'; } catch (e) { return false; }
+})();
+/** Like new Intl.DateTimeFormat('en-CA', options) in BC time, correct even with outdated time zone data. */
+function bcFormat(options) {
+  const live = new Intl.DateTimeFormat('en-CA', Object.assign({}, options, { timeZone: 'America/Vancouver' }));
+  const fixed = tzOutdated ? new Intl.DateTimeFormat('en-CA', Object.assign({}, options, { timeZone: 'Etc/GMT+7' })) : live;
+  const pick = (d) => (+d >= BC_PERMANENT ? fixed : live);
+  return { format: (d) => pick(d).format(d), formatToParts: (d) => pick(d).formatToParts(d) };
+}
+const dayFmt = bcFormat({ weekday: 'short', month: 'short', day: 'numeric' });
+const timeFmt = bcFormat({ hour: 'numeric', minute: '2-digit' });
 const fmtTime = (ms) => (Number.isFinite(ms) ? timeFmt.format(new Date(ms)).replace(/\./g, '').replace(/\s?([ap])m/i, ' $1.m.') : '?');
 const fmtDateTime = (ms) => (Number.isFinite(ms) ? `${dayFmt.format(new Date(ms))} ${fmtTime(ms)}` : 'unknown time');
 function fmtWindow(off, on) {

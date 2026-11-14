@@ -9,7 +9,6 @@
   const OFFICIAL = 'https://www.bchydro.com/power-outages/app/outage-list-planned.html';
   const OFFICIAL_CURRENT = 'https://www.bchydro.com/power-outages/app/outage-list.html';
   const MAP = 'https://www.bchydro.com/power-outages/app/outage-map.html#outage=';
-  const TZ = 'America/Vancouver';
 
   const $ = (sel) => document.querySelector(sel);
   const els = {
@@ -1086,14 +1085,15 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
 
   // ------------------------------------------------------------ formatting
 
-  const dFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric' });
-  const dyFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-  const tFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true });
-  const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+  // BC time, corrected on devices whose time zone data predates BC's 2026 change (see bcFormat in matcher.js).
+  const dFmt = M.bcFormat({ weekday: 'short', month: 'short', day: 'numeric' });
+  const dyFmt = M.bcFormat({ weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const tFmt = M.bcFormat({ hour: 'numeric', minute: '2-digit', hour12: true });
+  const dayKey = M.bcFormat({ year: 'numeric', month: '2-digit', day: '2-digit' });
 
   /** Short time: "7am", "9:30pm". */
-  function fmtTime(ms) {
-    const p = tFmt.formatToParts(new Date(ms));
+  function fmtTime(ms, fmt = tFmt) {
+    const p = fmt.formatToParts(new Date(ms));
     const v = (t) => (p.find((x) => x.type === t) || {}).value || '';
     const min = v('minute');
     return `${v('hour')}${min && min !== '00' ? ':' + min : ''}${v('dayPeriod').replace(/[.\s]/g, '').toLowerCase()}`;
@@ -1365,6 +1365,22 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
         .then(() => { state.alertsBusy = false; render(); });
     }
   });
+
+  // The time zone data here predates BC's 2026 change: say the times are corrected, and show the difference
+  // between BC time as this system works it out and the correct time.
+  // Dismissing it is remembered in this browser.
+  const TZ_DISMISS_KEY = 'outage-finder.tz-warning-dismissed';
+  if (M.tzOutdated && Date.now() >= Date.UTC(2026, 10, 1, 9) && !readJSON(localStorage, TZ_DISMISS_KEY)) {
+    const now = Date.now();
+    const local = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Vancouver', hour: 'numeric', minute: '2-digit', hour12: true });
+    const warn = document.createElement('p');
+    warn.className = 'tz-warning';
+    warn.setAttribute('role', 'note');
+    warn.innerHTML = `<strong>Times on this page have been adjusted to correct BC time.</strong><span class="tz-times">This browser says ${esc(fmtTime(now, local))} but the correct BC time is ${esc(fmtTime(now))}.</span>`
+      + '<button type="button" class="tz-dismiss" aria-label="Dismiss">×</button>';
+    warn.querySelector('.tz-dismiss').addEventListener('click', () => { writeJSON(localStorage, TZ_DISMISS_KEY, true); warn.remove(); });
+    document.querySelector('main').prepend(warn);
+  }
 
   readState();
   load();
