@@ -238,13 +238,14 @@
   }
 
   /**
-   * The municipality's other planned outages, listed below the address's own: each a summary with a chip saying it
+   * The municipality's other planned outages, in an expandable section below the address's own: each a summary with a chip saying it
    * is not the address, and a "Show outage details" button that opens the whole card in a dialog.
    */
   function othersBlock(r, q, now) {
     const where = r.muniLabel ? ` in ${esc(r.muniLabel)}` : '';
     const chip = state.home && queryIsHome() ? 'Not your address' : 'Not this address';
-    return `<section class="others-section"><div class="results"><p class="group-head">Other planned outages${where}</p>${r.others.map((i) => card(i, q, now, null, { summary: true, chip })).join('')}</div></section>`;
+    // Collapsed under a heading with the count; opening it is kept across re-renders (setHTML leaves it alone).
+    return `<details class="others-section"><summary class="others-head">Other planned outages${where} (${r.others.length})</summary><div class="results">${r.others.map((i) => card(i, q, now, null, { summary: true, chip })).join('')}</div></details>`;
   }
 
   /**
