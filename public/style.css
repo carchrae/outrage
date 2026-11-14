@@ -100,6 +100,10 @@ a { color: var(--accent); }
 .note { margin: 10px 0 0; padding: 8px 0; color: var(--warn); font-size: 0.95rem; }
 .bc-note { margin: 4px -6px 0; padding: 8px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 0.92rem; }
 .bc-note-head { margin: 10px 0 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+/* A summary's chips keep their own row; the Details button sits right of the date line, its edge in line with
+   the boxes below. */
+.summary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.summary-head > .details-btn { flex: none; margin: -4px -6px 0 0; } /* centred on the date line */
 .bc-cause { margin: 0; color: var(--text); }
 .bc-note .note { margin: 4px 0 0; padding: 0; font-size: inherit; color: var(--text); }
 /* Columns read top to bottom, so the alphabetical order runs down each column. */
@@ -248,6 +252,9 @@ html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-b
 .sheet-pad { padding: 4px 12px 0; }
 .sheet-pad > .changes:first-child { border-top: 0; }
 .btn.changes-btn.new { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+/* "Details": an accent-outlined button, so it reads as something to press. */
+.btn.details-btn { border-color: var(--accent); color: var(--accent); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.btn.details-btn:hover { background: var(--soft); }
 html:has(.sheet[open]) { overflow: hidden; }
 .dialog h3 { margin: 0 0 10px; font-size: 1.1rem; }
 .dialog ul { margin: 0 0 12px; padding-left: 18px; }

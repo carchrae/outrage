@@ -239,13 +239,13 @@
 
   /**
    * The municipality's other planned outages, in an expandable section below the address's own: each a summary with a chip saying it
-   * is not the address, and a "Show outage details" button that opens the whole card in a dialog.
+   * is not the address, and a "Details" button that opens the whole card in a dialog.
    */
   function othersBlock(r, q, now) {
     const where = r.muniLabel ? ` in ${esc(r.muniLabel)}` : '';
     const chip = state.home && queryIsHome() ? 'Not your address' : 'Not this address';
     // Collapsed under a heading with the count; opening it is kept across re-renders (setHTML leaves it alone).
-    return `<details class="others-section"><summary class="others-head">Other planned outages${where} (${r.others.length})</summary><div class="results">${r.others.map((i) => card(i, q, now, null, { summary: true, chip })).join('')}</div></details>`;
+    return `<details class="others-section"><summary class="others-head">Other planned outages${where} (${r.others.length})</summary><div class="results">${r.others.map((i) => card(i, q, now, null, { summary: true, chip, streets: true })).join('')}</div></details>`;
   }
 
   /**
@@ -393,7 +393,7 @@
     const chip = m ? `<span class="badge new">${esc(m[1])}</span>` : '';
     const when = at ? `<span class="muted">${esc(fmtDateTime(at))}</span>` : '';
     const listed = id != null && state.outages.concat(state.current).some((o) => String(o.id) === String(id));
-    const more = listed ? `<button type="button" class="btn small" data-details="${esc(String(id))}">Show outage details</button>` : '';
+    const more = listed ? `<button type="button" class="btn small details-btn" data-details="${esc(String(id))}">Details</button>` : '';
     const head = chip || when || more ? `<span class="change-head">${chip}${when}${more}</span>` : '';
     const [text, detail] = (m ? m[2] : line).split('\n');
     return `<li>${head}${esc(text)}${detail ? `<span class="change-detail">${esc(detail)}</span>` : ''}</li>`;
@@ -622,7 +622,7 @@
     const summary = summaryFor(matches, state.home.muni, 'your');
 
     const headline = panelTitle(matches, now);
-    // Each outage in the summary has its own "Show outage details" button; this one is for hiding them again, or
+    // Each outage in the summary has its own "Details" button; this one is for hiding them again, or
     // for showing them when nothing is in the summary (an outage happening now is in the live box instead).
     const inSummary = matches.strong.some((i) => !isLive(i.o, now) && i.o.kind === 'planned');
     const more = state.showMore || !inSummary ? `<p class="home-more"><button type="button" class="btn small" id="home-more">${state.showMore ? 'Hide outage details' : 'Show outage details'}</button></p>` : '';
@@ -925,8 +925,11 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     else setHTML(els.results, html);
   }
 
-  /** A planned outage. `summary` is the address panel's version: no match chips, streets, original text or footer. */
-  function card(item, q, now, changeTag, { summary = false, chip = '' } = {}) {
+  /**
+   * A planned outage. `summary` is the address panel's version: no match chips, original text or footer, and no
+   * streets unless `streets` is set.
+   */
+  function card(item, q, now, changeTag, { summary = false, chip = '', streets = false } = {}) {
     if (item.o.kind === 'current') return currentCard(item, q, now, changeTag);
     const o = item.o;
     const st = statusOf(o, now);
@@ -947,18 +950,22 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (o.parsed.flags.continued) badges.push('<span class="badge muted">Continuation of another listing</span>');
 
     // What BC Hydro wrote about the work (cause and notes), in one labelled box just above the full street list.
+    // In a summary the Details button sits at the right of the time and place lines, taking no extra height.
+    const details = summary ? `<button type="button" class="btn small details-btn" data-details="${o.id}">Details</button>` : '';
     const bcNote = `<p class="bc-note-head">BC Hydro note</p><div class="bc-note"><p class="bc-cause">${esc(o.cause || 'Planned work')}</p>${notes.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}</div>`;
-    const segs = summary ? bcNote : addressList(o, m, q, bcNote);
+    // A summary leaves out the streets unless asked (the other outages in town show theirs, below the note; the
+    // address's own do not). The full card has the matching streets, then the note, then all the streets.
+    const segs = summary ? bcNote + (streets ? addressList(o, null, q) : '') : addressList(o, m, q, bcNote);
 
     const customers = o.numCustomersOut < 5 ? 'fewer than 5' : fmtNum(o.numCustomersOut);
     const hitClass = m && m.numberListed === true && item.muniMatch && !summary ? ' hit' : '';
     const top = `
 <article class="card${hitClass}${st === 'cancelled' ? ' cancelled' : ''}${summary ? ' summary' : ''}"${summary ? '' : ` id="o-${o.id}"`}>
   <div class="card-top">${badges.join('')}</div>
-  <h3 class="when">${fmtWindow(o.dateOff, o.dateOn)} <span class="dur">(${fmtDuration(o.dateOn - o.dateOff)})</span></h3>
-  <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'}</p>
+  ${summary ? '<div class="summary-head"><div>' : ''}<h3 class="when">${fmtWindow(o.dateOff, o.dateOn)} <span class="dur">(${fmtDuration(o.dateOn - o.dateOff)})</span></h3>
+  <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'}</p>${summary ? `</div>${details}</div>` : ''}
   ${segs}`;
-    if (summary) return top + `\n  <p class="home-more"><button type="button" class="btn small" data-details="${o.id}">Show outage details</button></p>\n</article>`;
+    if (summary) return top + `\n</article>`;
     return top + `
   <details class="raw"><summary>Original area text from BC Hydro</summary><pre>${esc(o.parsed.text)}</pre></details>
   ${o.related.length ? `<p class="related">Same time window in ${esc(o.municipality)} (likely the same job):${o.related.map((id) => `<button type="button" data-goto="${id}">#${id}</button>`).join('')}</p>` : ''}
