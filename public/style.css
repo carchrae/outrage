@@ -252,8 +252,9 @@ html[data-boot="home"] .site-header, html[data-boot="home"] .search, html[data-b
 .sheet-pad { padding: 4px 12px 0; }
 .sheet-pad > .changes:first-child { border-top: 0; }
 .btn.changes-btn.new { border-color: var(--accent); color: var(--accent); font-weight: 600; }
-/* "Details": an accent-outlined button, so it reads as something to press. */
-.btn.details-btn { border-color: var(--accent); color: var(--accent); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+/* "Details": an accent-outlined button with an arrow, so it reads as something to press. */
+.btn.details-btn { display: inline-flex; align-items: center; gap: 4px; border-color: var(--accent); color: var(--accent); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
+.btn.details-btn::after { content: '›'; font-size: 1.15em; line-height: 1; }
 .btn.details-btn:hover { background: var(--soft); }
 html:has(.sheet[open]) { overflow: hidden; }
 .dialog h3 { margin: 0 0 10px; font-size: 1.1rem; }

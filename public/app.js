@@ -393,7 +393,7 @@
     const chip = m ? `<span class="badge new">${esc(m[1])}</span>` : '';
     const when = at ? `<span class="muted">${esc(fmtDateTime(at))}</span>` : '';
     const listed = id != null && state.outages.concat(state.current).some((o) => String(o.id) === String(id));
-    const more = listed ? `<button type="button" class="btn small details-btn" data-details="${esc(String(id))}">details</button>` : '';
+    const more = listed ? `<button type="button" class="btn small details-btn" data-details="${esc(String(id))}">Details</button>` : '';
     const head = chip || when || more ? `<span class="change-head">${chip}${when}${more}</span>` : '';
     const [text, detail] = (m ? m[2] : line).split('\n');
     return `<li>${head}${esc(text)}${detail ? `<span class="change-detail">${esc(detail)}</span>` : ''}</li>`;
@@ -951,7 +951,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
 
     // What BC Hydro wrote about the work (cause and notes), in one labelled box just above the full street list.
     // In a summary the Details button sits at the right of the time and place lines, taking no extra height.
-    const details = summary ? `<button type="button" class="btn small details-btn" data-details="${o.id}">details</button>` : '';
+    const details = summary ? `<button type="button" class="btn small details-btn" data-details="${o.id}">Details</button>` : '';
     const bcNote = `<p class="bc-note-head">BC Hydro note</p><div class="bc-note"><p class="bc-cause">${esc(o.cause || 'Planned work')}</p>${notes.notes.map((n) => `<p class="note">${esc(n)}</p>`).join('')}</div>`;
     // A summary leaves out the streets unless asked (the other outages in town show theirs, below the note; the
     // address's own do not). The full card has the matching streets, then the note, then all the streets.
