@@ -300,7 +300,7 @@
 
     for (const o of d.added) {
       if (o.kind === 'current') {
-        add(o.id, 'New unplanned outage', `Power out since ${fmtDateTime(o.dateOff)}${o.dateOn ? `, expected back ${fmtDateTime(o.dateOn)}` : ', no restoration estimate yet'}`,
+        add(o.id, o.plannedWork ? 'Planned work started' : 'New unplanned outage', `Power out since ${fmtDateTime(o.dateOff)}${o.dateOn ? `, expected back ${fmtDateTime(o.dateOn)}` : ', no restoration estimate yet'}`,
           [o.cause, people(o), o.crewStatusDescr].filter(Boolean).join(' · '), o.dateOn);
       } else add(o.id, 'New', `${when(o)}, ${startsIn(o)}`, about(o), o.dateOn);
     }
@@ -315,7 +315,7 @@
     for (const o of d.cancelled) add(o.id, 'Now cancelled', `${when(o)} will not go ahead`, about(o), o.dateOn);
     for (const o of d.updated) {
       if (o.kind === 'current') {
-        add(o.id, 'Updated', `Unplanned outage since ${fmtDateTime(o.dateOff)}: ${o.dateOn ? 'power expected back ' + fmtDateTime(o.dateOn) : 'no restoration estimate yet'}`,
+        add(o.id, 'Updated', `${o.plannedWork ? 'Planned work' : 'Unplanned outage'} since ${fmtDateTime(o.dateOff)}: ${o.dateOn ? 'power expected back ' + fmtDateTime(o.dateOn) : 'no restoration estimate yet'}`,
           [o.crewStatusDescr, people(o)].filter(Boolean).join(' · '), o.dateOn);
         continue;
       }
@@ -329,7 +329,7 @@
     }
     for (const p of d.removed) add(p.id, 'No longer listed', `${when(p)} was taken off BC Hydro's list before it happened, so it is probably cancelled`, '', p.dateOn);
     for (const p of d.finished) {
-      if (p.kind === 'current') add(p.id, 'Power restored', `Unplanned outage from ${fmtDateTime(p.dateOff)} is over`, '', p.dateOn);
+      if (p.kind === 'current') add(p.id, 'Power restored', `${p.plannedWork ? 'Planned work' : 'Unplanned outage'} from ${fmtDateTime(p.dateOff)} is over`, '', p.dateOn);
       else add(p.id, 'Finished', `${when(p)} has ended`, '', p.dateOn);
     }
     return out;
@@ -465,7 +465,7 @@
       else if (now <= e.dateOn) st = 'in progress';
       else st = 'finished';
       const resched = e.rescheduledFrom ? ` <span class="muted">(moved from ${esc(fmtWindow(e.rescheduledFrom.dateOff, e.rescheduledFrom.dateOn))})</span>` : '';
-      const when = e.kind === 'current' ? `Unplanned, started ${esc(fmtDateTime(e.dateOff))}` : esc(fmtWindow(e.dateOff, e.dateOn));
+      const when = e.kind === 'current' ? `${/\bplanned work\b/i.test(e.cause || '') ? 'Planned work' : 'Unplanned'}, started ${esc(fmtDateTime(e.dateOff))}` : esc(fmtWindow(e.dateOff, e.dateOn));
       return `<li><span class="hist-when">${when}</span> <span class="badge muted">${st}</span>${resched}<br><span class="muted">${esc(e.segment)} · ${esc(e.cause || '')} · first seen ${esc(fmtDay(e.firstSeen))} · #${e.id}</span></li>`;
     }).join('');
     return `<details class="history"><summary>History for this address (${entries.length} outage${entries.length === 1 ? '' : 's'} seen)</summary><ul>${rows}</ul><p class="hint">Recorded in this browser each time you visit, starting from when you saved the address.</p></details>`;
@@ -515,7 +515,7 @@
 
 
   function summaryFor(matches, muni, whose) {
-    const out = matches.strong.filter((i) => i.o.kind === 'current');
+    const out = matches.strong.filter((i) => i.o.kind === 'current' && !i.o.plannedWork);
     const planned = matches.strong.filter((i) => i.o.kind === 'planned');
     const n = planned.length;
     const listed = planned.filter((i) => i.match.numberListed === true).length;
@@ -532,7 +532,7 @@
     const similar = matches.weak.length - mentions;
     if (similar) summary += ` ${similar} similar street name${similar === 1 ? '' : 's'} shown below.`;
     if (mentions) summary += ` ${mentions} outage notice${mentions === 1 ? ' mentions' : 's mention'} ${whose} street but could not be read for certain; check below.`;
-    if (!out.length && matches.nearby.length && (whose !== 'your' || state.showMore)) summary += ` ${matches.nearby.length} unplanned outage${matches.nearby.length === 1 ? '' : 's'} elsewhere in ${esc(muni || matches.q.muni)}.`;
+    if (!out.length && matches.nearby.length && (whose !== 'your' || state.showMore)) summary += ` ${nearbyCount(matches.nearby)} elsewhere in ${esc(muni || matches.q.muni)}.`;
     return summary;
   }
 
@@ -548,7 +548,7 @@
     const current = live.filter((i) => i.o.kind === 'current');
     live = live.filter((i) => i.o.kind === 'current' || !current.some((c) => c.o.municipality === i.o.municipality && (Math.abs((c.o.dateOn || 0) - (i.o.dateOn || 1)) < 3600e3 || Math.abs(c.o.dateOff - i.o.dateOff) < 3600e3)));
     return live.map(({ o, match }) => {
-      const planned = o.kind === 'planned' || /planned work/i.test(o.cause || '');
+      const planned = o.kind === 'planned' || o.plannedWork;
       const rows = [];
       if (o.kind === 'current') {
         const idx = CREW_STEPS.indexOf(o.crewStatus);
@@ -568,18 +568,24 @@
     }).join('');
   }
 
-  /** Unplanned outages elsewhere in the municipality: a compact line each, shown while details are hidden. */
+  /** "2 unplanned outages", "1 planned outage in progress", or both joined with "and". */
+  function nearbyCount(items) {
+    const work = items.filter((i) => i.o.plannedWork).length, other = items.length - work;
+    return [other && `${other} unplanned outage${other === 1 ? '' : 's'}`, work && `${work} planned outage${work === 1 ? '' : 's'} in progress`].filter(Boolean).join(' and ');
+  }
+
+  /** Outages happening now elsewhere in the municipality: a compact line each, shown while details are hidden. */
   function nearbyBox(matches, now) {
     const near = matches.nearby.filter((i) => i.o.kind === 'current');
     if (!near.length) return '';
     const rows = near.map(({ o }) => {
       const where = o.parsed.segments.length ? o.parsed.segments.map((s) => s.label).join(', ') : o.parsed.text;
-      const bits = [o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`];
+      const bits = [o.plannedWork && 'Planned work', o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`].filter(Boolean);
       if (o.numCustomersOut != null) bits.push(`${fmtNum(o.numCustomersOut)} customer${o.numCustomersOut === 1 ? '' : 's'}`);
       if (o.dateOn) bits.push(`power back ${fmtDateTime(o.dateOn)}`);
       return `<li><span class="where">${esc(where)}</span><span class="sub">${esc(bits.join(' · '))}</span></li>`;
     });
-    return `<div class="nearby card current"><div class="nearby-head">${near.length} unplanned outage${near.length === 1 ? '' : 's'} near you</div><ul>${rows.join('')}</ul></div>`;
+    return `<div class="nearby card current${near.every((i) => i.o.plannedWork) ? ' planned-work' : ''}"><div class="nearby-head">${esc(nearbyCount(near))} near you</div><ul>${rows.join('')}</ul></div>`;
   }
 
   /** The matched outages' times, one line each; outages happening now are in the live box instead. */
@@ -651,7 +657,8 @@ ${homeOthers(now)}`);
   /** What the panel heading says: the state of the saved street in two words. */
   function panelTitle(matches, now) {
     const strong = matches.strong;
-    if (strong.some((i) => i.o.kind === 'current')) return { text: 'Power out', cls: 'is-out' };
+    if (strong.some((i) => i.o.kind === 'current' && !i.o.plannedWork)) return { text: 'Power out', cls: 'is-out' };
+    if (strong.some((i) => i.o.plannedWork)) return { text: 'Planned outage now', cls: 'is-planned' };
     if (strong.some((i) => statusOf(i.o, now) === 'in progress')) return { text: 'Planned outage now', cls: 'is-planned' };
     if (strong.some((i) => statusOf(i.o, now) === 'upcoming')) return { text: 'Planned outage', cls: 'is-planned' };
     return { text: 'No outage', cls: 'is-clear' };
@@ -911,8 +918,9 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       m.set(o.municipality, (m.get(o.municipality) || 0) + 1);
     }
     const soon = active.filter((o) => statusOf(o, now) !== 'cancelled' && o.dateOff - now < 48 * 3600e3).length;
-    const cur = state.current.length;
-    const curCustomers = state.current.reduce((a, o) => a + (o.numCustomersOut || 0), 0);
+    const unplanned = state.current.filter((o) => !o.plannedWork);
+    const cur = unplanned.length;
+    const curCustomers = unplanned.reduce((a, o) => a + (o.numCustomersOut || 0), 0);
     const intro = `<strong>${active.length}</strong> planned outages listed across BC, <strong>${soon}</strong> starting within 48 hours. <strong>${cur}</strong> unplanned outage${cur === 1 ? '' : 's'} right now affecting ${fmtNum(curCustomers)} customers.`;
     if (!target) setHTML(els.status, intro + ' Search above, or browse a municipality:');
     const html = [...byRegion.keys()].sort().map((region) => {
@@ -978,7 +986,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     const m = item.match;
     const badges = [];
     if (changeTag) badges.push(`<span class="badge new">${esc(changeTag)}</span>`);
-    badges.push('<span class="badge danger">Unplanned outage</span>');
+    badges.push(o.plannedWork ? '<span class="badge warn">Planned work in progress</span>' : '<span class="badge danger">Unplanned outage</span>');
     if (m && m.streetScore >= 2 && !m.segment.boundary) badges.push(`<span class="badge hit">${m.numberListed === true ? 'Your address is in the affected block' : 'Your street is affected'}</span>`);
     else if (m && m.segment.boundary) badges.push('<span class="badge muted">Your street bounds the affected area</span>');
     if (o.crewStatusDescr) badges.push(`<span class="badge">${esc(o.crewStatusDescr)}</span>`);
@@ -988,7 +996,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     const eta = !o.dateOn && o.crewEta && o.showEta ? ` · Crew expected ${esc(fmtDateTime(o.crewEta))}` : '';
     const dur = fmtDuration(now - o.dateOff);
     return `
-<article class="card current${m && m.streetScore >= 2 && !m.segment.boundary ? ' hit' : ''}" id="o-${o.id}">
+<article class="card current${o.plannedWork ? ' planned-work' : ''}${m && m.streetScore >= 2 && !m.segment.boundary ? ' hit' : ''}" id="o-${o.id}">
   <div class="card-top">${badges.join('')}</div>
   <h3 class="when">Out since ${esc(fmtDateTime(o.dateOff))} <span class="dur">(${dur} so far)</span></h3>
   <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Cause not yet known')}</p>

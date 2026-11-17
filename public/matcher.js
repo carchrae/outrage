@@ -25,6 +25,12 @@
     return [...set].sort((a, b) => a.localeCompare(b));
   }
 
+  /**
+   * Planned work that has started: BC Hydro moves it into the current (unplanned) feed, with a cause
+   * such as "Planned work being done on our equipment", while the planned feed still lists it too.
+   */
+  function isPlannedWork(o) { return !!o && o.kind === 'current' && /\bplanned work\b/i.test(o.cause || ''); }
+
   /** Flatten both feeds into tagged, parsed outage lists. */
   function ingestFeeds(planned, current) {
     const munis = collectMunis(planned, current);
@@ -35,7 +41,9 @@
       }
       return out;
     };
-    return { munis, outages: flat(planned, 'planned'), current: flat(current, 'current') };
+    const cur = flat(current, 'current');
+    for (const o of cur) o.plannedWork = isPlannedWork(o);
+    return { munis, outages: flat(planned, 'planned'), current: cur };
   }
 
   function statusOf(o, now) {
@@ -87,7 +95,7 @@
   function snapshotOf(items) {
     const out = {};
     for (const { o, match } of items) {
-      out[o.id] = { kind: o.kind, dateOff: o.dateOff, dateOn: o.dateOn, cancelled: o.parsed.flags.cancelled, listed: match.numberListed, text: o.parsed.text };
+      out[o.id] = { kind: o.kind, ...(o.plannedWork ? { plannedWork: true } : {}), dateOff: o.dateOff, dateOn: o.dateOn, cancelled: o.parsed.flags.cancelled, listed: match.numberListed, text: o.parsed.text };
     }
     return out;
   }
@@ -138,7 +146,7 @@
     const prev = base.items;
     for (const { o } of items) {
       const p = prev[o.id];
-      if (!p) { changes.added.push(o); changes.byId[o.id] = o.kind === 'current' ? 'New unplanned outage' : 'New'; continue; }
+      if (!p) { changes.added.push(o); changes.byId[o.id] = o.kind === 'current' ? (o.plannedWork ? 'Planned work started' : 'New unplanned outage') : 'New'; continue; }
       if (o.kind === 'current') {
         if (p.dateOn !== o.dateOn || p.text !== o.parsed.text) { changes.updated.push(o); changes.byId[o.id] = 'Updated'; }
         continue;
@@ -171,5 +179,5 @@
     return d.added.length + d.rescheduled.length + d.cancelled.length + d.updated.length + d.finished.length + d.removed.length;
   }
 
-  return { collectMunis, ingestFeeds, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
+  return { collectMunis, ingestFeeds, isPlannedWork, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
 });

@@ -4,6 +4,7 @@
  * can be unit tested.
  */
 import P from '../../../public/parse.js';
+import M from '../../../public/matcher.js';
 
 /** Keep only the fields needed to detect a change and name its streets. */
 export function slimFeed(data, kind) {
@@ -199,6 +200,13 @@ const titleCase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, (c) =
 /** One short line per changed outage, in plain words. Street-level only: the server never knows the house number. */
 export function describeChange(o) {
   const w = o.was || {};
+  if (o.kind === 'current' && M.isPlannedWork(o)) {
+    const crew = o.crew ? `, ${o.crew.toLowerCase()}` : '';
+    if (o.change === 'removed') return 'Planned work finished: power back on';
+    if (o.change === 'added') return `Power off: planned work has started${crew}`;
+    if (o.dateOn && o.dateOn !== w.dateOn) return `Planned work: power expected back ${fmtDateTime(o.dateOn)}${crew}`;
+    return `Planned work updated${crew}`;
+  }
   if (o.kind === 'current') {
     const crew = o.crew ? `, ${o.crew.toLowerCase()}` : '';
     const n = o.customers != null ? `, ${o.customers} customer${o.customers === 1 ? '' : 's'}` : '';

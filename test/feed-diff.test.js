@@ -162,3 +162,9 @@ test('municipality topic: every outage in the town, named by street; street topi
   assert.equal(both.title, 'Adams Rd, Bowen Island');
   assert.match(both.body, /^New planned outage: [^\n]+\n5 Cardena Dr: New planned outage/);
 });
+
+test('describeChange calls started planned work planned, not unplanned', async () => {
+  const L = await import('../netlify/functions/lib/feed-diff.mjs');
+  assert.equal(L.describeChange({ kind: 'current', change: 'added', cause: 'Planned work being done on our equipment', crew: 'Crew on-site' }), 'Power off: planned work has started, crew on-site');
+  assert.match(L.describeChange({ kind: 'current', change: 'added', cause: 'Tree down', customers: 3 }), /^Power out: unplanned outage/);
+});

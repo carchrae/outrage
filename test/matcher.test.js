@@ -46,3 +46,13 @@ test('bcFormat shows BC time as UTC-7 after the 2026 change, whatever the runtim
   assert.match(t.format(new Date(Date.UTC(2026, 6, 1, 15))), /^8:00/); // Jul 1 2026: UTC-7
   assert.match(t.format(new Date(Date.UTC(2025, 11, 1, 16))), /^8:00/); // Dec 1 2025: still UTC-8
 });
+
+test('ingestFeeds: planned work that has started, listed in the current feed, is flagged as planned work', () => {
+  const cur = feed([
+    o(1, 'North of WILLIES WAY, South-East of ADAMS RD', 'Bowen Island', { cause: 'Planned work being done on our equipment' }),
+    o(2, 'ADAMS RD', 'Bowen Island', { cause: 'Tree down' }),
+    o(3, 'COWAN RD', 'Bowen Island', { cause: 'Unplanned work' }),
+  ], ['Bowen Island']);
+  const fed = M.ingestFeeds(feed([], ['Bowen Island']), cur);
+  assert.deepEqual(fed.current.map((x) => x.plannedWork), [true, false, false]);
+});
