@@ -70,7 +70,7 @@
       if (A) A.register().catch(() => {});
       if (A && state.home && !state.error) {
         A.sync(state.home, state.munis).then((changed) => { if (changed) render(); });
-        if (A.standalone()) maybeOfferAlerts(`Turn on alerts for ${homeLabel()} so this app can tell you when something changes.`);
+        maybeOfferAlerts(A.standalone() ? `Turn on alerts for ${homeLabel()} so this app can tell you when something changes.` : alertsIntro());
       }
     }
   }
@@ -500,6 +500,7 @@
     }
     render();
     if (A && changed) A.sync(state.home, state.munis).then((c) => { if (c) render(); }); // moves an existing alert subscription to the new street
+    if (A && changed) maybeOfferAlerts(alertsIntro());
   }
 
 
@@ -854,10 +855,16 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   }
 
   const ASKED_KEY = 'outage-finder.alerts-offered';
+  /** The one-time offer's opening line: what alerts do for the saved street. */
+  function alertsIntro() {
+    const q = P.parseQuery(state.home.address, state.munis);
+    return `Alerts are off. Turn them on to get a notification when an outage on ${esc(q.street || state.home.address)} changes.`;
+  }
   /**
    * Offer alerts once, without nagging: right after an install is accepted, and on the first open of the
    * installed app (that is the only way an iPhone can get them). The button in the dialog supplies the
-   * user gesture the permission prompt needs.
+   * user gesture the permission prompt needs. Also offered the first time an address is saved or opened;
+   * whichever comes first is the only time it is ever shown on this device.
    */
   function maybeOfferAlerts(intro) {
     if (!A || !A.supported() || !state.home || A.status() !== 'off') return false;
@@ -865,7 +872,10 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     try { asked = !!localStorage.getItem(ASKED_KEY); } catch (e) { /* ignore */ }
     if (asked) return false;
     try { localStorage.setItem(ASKED_KEY, '1'); } catch (e) { /* ignore */ }
-    alertsDialog(intro);
+    if (A.needsInstall()) {
+      // iPhone and iPad in Safari: alerts only work from the home screen app, so explain instead of offering them.
+      openDialog(`<h3>Outage alerts</h3><p>${intro}</p><p>On iPhone and iPad, alerts only work from the home screen app: press Install, then turn alerts on from the app.</p><div class="actions"><button type="button" class="btn small primary" id="dialog-close">OK</button></div>`);
+    } else alertsDialog(intro);
     return true;
   }
 
