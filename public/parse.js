@@ -325,11 +325,14 @@
    * Returns null when the text does not end in a list of streets.
    */
   function splitNoteAndList(t) {
-    const re = /[.!?:]\s+/g;
+    // A sentence end, or BC Hydro's " | " separator: "*Rescheduled from November 16* | 101-113 Baker Rd, ...".
+    const re = /[.!?:]\s+|\s\|\s+/g;
     let m;
     while ((m = re.exec(t))) {
       const tail = t.slice(m.index + m[0].length);
-      if (isStreetList(tail)) return { note: t.slice(0, m.index + 1).trim(), list: tail };
+      // The list must start right there, not part-way into a sentence ("Some premises on ... outage. Adams; ...").
+      const first = cleanToken(tail.split(/[,;]/)[0]);
+      if (first.split(/\s+/).length <= 6 && isStreetList(tail)) return { note: t.slice(0, m.index + 1).replace(/\s*\|$/, '').trim(), list: tail };
     }
     return null;
   }

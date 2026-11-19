@@ -159,6 +159,15 @@ test('a semicolon list of bare street names inside a bold note is parsed, not ke
   assert.equal(n.segments.length, 1);
 });
 
+test('a bold reschedule note and street list split at BC Hydro\'s " | " separator', () => {
+  const area = '<b>*Rescheduled from November 16, 2026* | 101-113 Baker Rd, 149-171 Bannister Rd, 400-510 Bowen Isl Trk Rd, 961-973 Captain Cates Walk, 1072-1116 Fox glove Ln, , 955-962 Harbour View Pl, 1810 Howe St,</b><br/>787-911 Hummingbird Lane, 1486-1519 Williams Rd';
+  const p = P.parseArea(area, ['Bowen Island']);
+  assert.deepEqual(p.notes, ['*Rescheduled from November 16, 2026*']);
+  assert.ok(p.flags.rescheduled);
+  assert.deepEqual(p.segments.map((s) => s.label), ['101-113 Baker Rd', '149-171 Bannister Rd', '400-510 Bowen Isl Trk Rd', '961-973 Captain Cates Walk', '1072-1116 Fox glove Ln', '955-962 Harbour View Pl', '1810 Howe St', '787-911 Hummingbird Lane', '1486-1519 Williams Rd']);
+  assert.equal(P.matchOutage(P.parseQuery('150 Bannister Rd', ['Bowen Island']), p).numberListed, true);
+});
+
 test('a list of bare street names does not treat the last name as a locality', () => {
   const p = P.parseArea('<b>Parts of Bowen Island</b><br/>Adams, Amelia, Anastasia, Blue Sky Cir, Eagle Tree Rd, Windjammer', ['Bowen Island']);
   assert.deepEqual(p.segments.map((s) => s.label), ['Adams', 'Amelia', 'Anastasia', 'Blue Sky Cir', 'Eagle Tree Rd', 'Windjammer']);
