@@ -56,3 +56,27 @@ test('ingestFeeds: planned work that has started, listed in the current feed, is
   const fed = M.ingestFeeds(feed([], ['Bowen Island']), cur);
   assert.deepEqual(fed.current.map((x) => x.plannedWork), [true, false, false]);
 });
+
+test('a planned outage stays listed until the end of the day it ended, then is hidden', () => {
+  const end = Date.UTC(2026, 10, 19, 23); // 4pm BC time (UTC-7)
+  const fed = M.ingestFeeds(feed([o(1, '1-9 Adams Rd', 'B', { dateOff: end - 8 * 3600e3, dateOn: end })], ['B']), null);
+  const ids = (now, past) => M.homeMatches(fed.outages, fed.munis, { address: '5 Adams Rd', muni: 'B' }, now, past).strong.map((i) => i.o.id);
+  const lateEvening = Date.UTC(2026, 10, 20, 6, 59); // 11:59pm BC time
+  assert.equal(M.statusOf(fed.outages[0], end + 3600e3), 'finished');
+  assert.deepEqual(ids(end + 3600e3, false), [1]);
+  assert.deepEqual(ids(lateEvening, false), [1]);
+  assert.deepEqual(ids(lateEvening + 120e3, false), []); // 12:01am the next day
+  assert.deepEqual(ids(lateEvening + 120e3, true), [1]);
+});
+
+test('homeMatches: a live outage spanning several municipalities counts as in each of them', () => {
+  const cur = feed([o(2869531, 'South of CARTER RD, West of GLENWYND PL', 'Bowen Island, West Vancouver', { municipalities: ['Bowen Island', 'West Vancouver'], cause: 'Planned work being done on our equipment' })], ['Bowen Island', 'West Vancouver']);
+  const fed = M.ingestFeeds(feed([], ['Bowen Island', 'West Vancouver']), cur);
+  const m = M.homeMatches(fed.outages.concat(fed.current), fed.munis, { address: '5 Adams Rd', muni: 'Bowen Island' }, 500, false);
+  assert.deepEqual(m.nearby.map((i) => i.o.id), [2869531]);
+});
+
+test('collectMunis: an outage spanning municipalities adds each one, not the joined name', () => {
+  const cur = { regions: [{ id: 1, name: 'R', municipalities: [], outages: [{ id: 1, municipality: 'Delta, Richmond', municipalities: ['Delta', 'Richmond'] }, { id: 2, municipality: 'Coquitlam, Port Moody' }] }] };
+  assert.deepEqual(M.collectMunis(null, cur), ['Coquitlam', 'Delta', 'Port Moody', 'Richmond']);
+});

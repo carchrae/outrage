@@ -112,9 +112,11 @@ a { color: var(--accent); }
 .addr-label { margin: 10px 0 0; font-size: 0.85rem; font-weight: 600; color: var(--hit); }
 .addr-label + .addr-box { margin-top: 4px; }
 .addr-label.weak { color: var(--muted); }
+.addr-label.excluded { color: var(--warn); }
 .addresses { margin: 0; padding: 0; list-style: none; columns: var(--namew, 13em); column-gap: 24px; --numk: 1; font-size: 0.92rem; /* on the list, so its ch matches the entries */ }
 .addresses li { padding: 2px 0; overflow-wrap: anywhere; break-inside: avoid; }
 .addresses li.match { font-weight: 600; color: var(--hit); }
+.addresses li.match.excluded { color: var(--warn); }
 /* Number column right-aligned, names left-aligned on one vertical line; --numw is set per list to its widest number. */
 .addresses.aligned { columns: calc(var(--numw) * var(--numk) + 0.8ch + var(--namew)); }
 .addresses.aligned li { display: grid; grid-template-columns: var(--numpx, calc(var(--numw) * var(--numk))) 1fr; /* --numpx: measured by columns.js */ column-gap: 0.45em; align-items: baseline; }
@@ -133,6 +135,8 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .chip { font: inherit; font-size: 0.92rem; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; }
 .chip:hover { border-color: var(--accent); }
 .chip .n { color: var(--muted); margin-left: 4px; }
+.muni-picker { margin: 4px 0 14px; }
+.muni-picker .group-head { margin-top: 0; }
 
 .group-head { margin: 10px 0 -6px; font-size: 0.9rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 
@@ -155,12 +159,6 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
   .home-card .home-subtitle .muni { display: block; }
   .home-card .home-subtitle .muni .sep { display: none; }
 }
-.nearby { margin: 14px 0 0; font-size: 0.92rem; }
-.nearby-head { font-weight: 600; color: var(--danger); margin-bottom: 4px; }
-.nearby.planned-work .nearby-head { color: var(--warn); }
-.nearby ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.nearby .where { display: block; }
-.nearby .sub { display: block; color: var(--muted); font-size: 0.88rem; }
 
 /* ---- your address panel ---- */
 .home { margin: 4px 0 12px; }
@@ -280,10 +278,18 @@ html:has(.sheet[open]) { overflow: hidden; }
 .others-section { margin-top: 12px; }
 .others-head { padding: 10px 12px; font-weight: 600; cursor: pointer; }
 .others-section[open] > .others-head { border-bottom: 1px solid var(--border); }
+.muni-now ul { list-style: none; margin: 0; padding: 4px 12px 10px; display: grid; gap: 0; font-size: 0.92rem; }
+.muni-now li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.muni-now li:last-child { border-bottom: 0; }
+.muni-now .where { display: block; }
+.muni-now .sub { display: block; color: var(--muted); font-size: 0.88rem; }
+.muni-now .details-btn { flex: none; }
 .live { margin: 10px 0 4px; padding: 12px 14px; border-left: 4px solid var(--danger); background: var(--danger-bg); border-radius: 8px; }
 .live.planned { border-color: var(--warn); background: var(--warn-bg); }
 .live-head { font-weight: 700; font-size: 1.1rem; color: var(--danger); margin-bottom: 8px; }
 .live.planned .live-head { color: var(--warn); }
+.live-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.live-top > .details-btn { flex: none; margin: -4px -6px 0 0; }
 .live-rows { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; align-items: baseline; }
 .live-rows > div { display: contents; }
 .live-rows dt { color: var(--muted); font-size: 0.9rem; }

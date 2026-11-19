@@ -19,7 +19,8 @@
     for (const data of [planned, current]) {
       for (const r of (data && data.regions) || []) {
         for (const m of r.municipalities || []) set.add(typeof m === 'string' ? m : m.name);
-        for (const o of r.outages || []) if (o.municipality) set.add(o.municipality);
+        // An outage's own list, not its municipality text, which joins several ("Delta, Richmond").
+        for (const o of r.outages || []) for (const m of o.municipalities && o.municipalities.length ? o.municipalities : String(o.municipality || '').split(/,\s*/)) if (m) set.add(typeof m === 'string' ? m : m.name);
       }
     }
     return [...set].sort((a, b) => a.localeCompare(b));
@@ -46,6 +47,19 @@
     return { munis, outages: flat(planned, 'planned'), current: cur };
   }
 
+  /** An outage's municipalities, lower case: live entries can span several ("Bowen Island, West Vancouver"). */
+  function munisOf(o) {
+    const list = o.municipalities && o.municipalities.length ? o.municipalities : String(o.municipality || '').split(/,\s*/);
+    return list.map((m) => String(typeof m === 'string' ? m : m.name).toLowerCase());
+  }
+
+  /**
+   * Finished long enough ago to hide unless finished outages are asked for: a planned outage stays on the page until
+   * the end of the day (BC time) it was scheduled to end, so it does not vanish the minute its window closes.
+   */
+  function longFinished(o, now) { return statusOf(o, now) === 'finished' && !endedToday(o, now); }
+  function endedToday(o, now) { return now - o.dateOn < 24 * 3600e3 && dayOf(now) === dayOf(o.dateOn); }
+
   function statusOf(o, now) {
     if (o.kind === 'current') return 'in progress';
     if (o.parsed.flags.cancelled) return 'cancelled';
@@ -70,7 +84,7 @@
    * @param {string[]} munis known municipalities
    * @param {{address:string, muni?:string}} home
    * @param {number} now
-   * @param {boolean} includePast keep finished planned outages
+   * @param {boolean} includePast keep finished planned outages (those that ended earlier today are always kept)
    * @returns {{q:object, strong:object[], weak:object[], nearby:object[]}}
    */
   function homeMatches(all, munis, home, now, includePast) {
@@ -78,9 +92,9 @@
     const muniSet = resolveMunis(munis, home.muni || q.muni);
     const strong = [], weak = [], nearby = [];
     for (const o of all) {
-      if (!includePast && statusOf(o, now) === 'finished') continue;
+      if (!includePast && longFinished(o, now)) continue;
       const match = P.matchOutage(q, o.parsed);
-      const muniMatch = !!muniSet && (muniSet.has(o.municipality.toLowerCase()) || (match && muniSet.has(match.segment.locality.toLowerCase())));
+      const muniMatch = !!muniSet && (munisOf(o).some((m) => muniSet.has(m)) || (match && muniSet.has(match.segment.locality.toLowerCase())));
       if (!match) { if (o.kind === 'current' && muniMatch) nearby.push({ o, match: null, muniMatch: true }); continue; }
       if (muniSet && !muniMatch) continue;
       if (match.streetScore >= 2 && !match.segment.boundary) strong.push({ o, match, muniMatch: true });
@@ -179,5 +193,5 @@
     return d.added.length + d.rescheduled.length + d.cancelled.length + d.updated.length + d.finished.length + d.removed.length;
   }
 
-  return { collectMunis, ingestFeeds, isPlannedWork, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
+  return { collectMunis, ingestFeeds, isPlannedWork, longFinished, endedToday, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
 });

@@ -25,7 +25,8 @@ export function collectMunis(...feeds) {
   for (const data of feeds) {
     for (const r of (data && data.regions) || []) {
       for (const m of r.municipalities || []) set.add(typeof m === 'string' ? m : m.name);
-      for (const o of r.outages || []) if (o.municipality) set.add(o.municipality);
+      // An outage's own list, not its municipality text, which joins several ("Delta, Richmond").
+      for (const o of r.outages || []) for (const m of o.municipalities && o.municipalities.length ? o.municipalities : String(o.municipality || '').split(/,\s*/)) if (m) set.add(typeof m === 'string' ? m : m.name);
     }
   }
   return [...set];

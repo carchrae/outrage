@@ -192,7 +192,7 @@
     const now = Date.now();
     const q = P.parseQuery(state.query, state.munis);
     let list = state.outages;
-    if (!state.past) list = list.filter((o) => statusOf(o, now) !== 'finished');
+    if (!state.past) list = list.filter((o) => !M.longFinished(o, now));
     const muniFilter = state.muni || q.muni;
     const muniSet = resolveMunis(muniFilter);
     const inMuni = (o, seg) => !muniSet || muniSet.has(o.municipality.toLowerCase()) ||
@@ -557,17 +557,32 @@
         rows.push(['Crew', `<b>${esc(o.crewStatusDescr || 'No crew information')}</b>${bar}`]);
       }
       let back;
-      if (o.dateOn) back = `<b>${esc(fmtDateTime(o.dateOn))}</b> <span class="muted">(${o.dateOn > now ? esc(fmtRelative(o.dateOn - now)) : 'past the estimate'})</span>`;
+      if (o.dateOn) back = backEstimate(o.dateOn, now);
       else back = `<b>No estimate yet</b>${o.crewEta && o.showEta !== false && o.kind === 'current' ? ` <span class="muted">· crew expected ${esc(fmtDateTime(o.crewEta))} (${esc(fmtRelative(o.crewEta - now))})</span>` : ''}`;
-      rows.push(['Power back', back]);
+      rows.push(['Expected back', back]);
       rows.push(['Out since', `${esc(fmtDateTime(o.dateOff))} <span class="muted">(${esc(fmtAgo(now - o.dateOff))})</span>`]);
       if (o.cause) rows.push(['Cause', esc(o.cause)]);
       rows.push(['Affected', `${o.numCustomersOut != null ? esc(fmtNum(o.numCustomersOut)) + ' customers · ' : ''}${esc(match.segment.label)}`]);
       if (o.crewStatusNote) rows.push(['Note', esc(o.crewStatusNote)]);
       const head = planned ? 'Planned outage in progress on your street' : 'Power is out on your street';
-      return `<div class="live${planned ? ' planned' : ''}"><div class="live-head">${head}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
+      return `<div class="live${planned ? ' planned' : ''}"><div class="live-top"><div class="live-head">${head}</div>${detailsBtn(o.id)}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
     }).join('');
   }
+
+  /*
+   * BC Hydro's restoration time is an estimate, and it often stays in the feed after it passes while the crew works
+   * on. "Power back 4pm" with 4pm gone reads as if power came back, so it is always worded as an estimate.
+   */
+  function backEstimate(on, now) {
+    return on > now
+      ? `<b>${esc(fmtDateTime(on))}</b> <span class="muted">(${esc(fmtRelative(on - now))}, BC Hydro's estimate)</span>`
+      : `<b>${esc(fmtDateTime(on))}</b> <span class="muted">(estimate passed, not yet updated by BC Hydro)</span>`;
+  }
+  function backEstimateText(on, now) {
+    return on > now ? `expected back ${fmtDateTime(on)}` : `expected back ${fmtDateTime(on)}, estimate passed, not yet updated`;
+  }
+
+  function detailsBtn(id) { return `<button type="button" class="btn small details-btn" data-details="${esc(String(id))}">Details</button>`; }
 
   /** "2 unplanned outages", "1 planned outage in progress", or both joined with "and". */
   function nearbyCount(items) {
@@ -575,18 +590,26 @@
     return [other && `${other} unplanned outage${other === 1 ? '' : 's'}`, work && `${work} planned outage${work === 1 ? '' : 's'} in progress`].filter(Boolean).join(' and ');
   }
 
-  /** Outages happening now elsewhere in the municipality: a compact line each, shown while details are hidden. */
-  function nearbyBox(matches, now) {
-    const near = matches.nearby.filter((i) => i.o.kind === 'current');
+  /**
+   * Every outage happening now in the saved address's municipality (unplanned, or planned work under way), in a
+   * collapsed section at the bottom of the address panel: a compact line each, with a Details button. Ones on the
+   * saved street are also in the live box above, and are marked here.
+   */
+  function muniNowSection(matches, muni, now) {
+    const mine = matches.strong.filter((i) => i.o.kind === 'current');
+    const near = mine.concat(matches.nearby.filter((i) => i.o.kind === 'current'));
     if (!near.length) return '';
     const rows = near.map(({ o }) => {
       const where = o.parsed.segments.length ? o.parsed.segments.map((s) => s.label).join(', ') : o.parsed.text;
-      const bits = [o.plannedWork && 'Planned work', o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`].filter(Boolean);
+      const bits = [o.plannedWork ? 'Planned work' : 'Unplanned', o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`];
       if (o.numCustomersOut != null) bits.push(`${fmtNum(o.numCustomersOut)} customer${o.numCustomersOut === 1 ? '' : 's'}`);
-      if (o.dateOn) bits.push(`power back ${fmtDateTime(o.dateOn)}`);
-      return `<li><span class="where">${esc(where)}</span><span class="sub">${esc(bits.join(' · '))}</span></li>`;
+      if (o.dateOn) bits.push(backEstimateText(o.dateOn, now));
+      const chip = mine.some((i) => i.o === o) ? '<span class="badge danger">Your street</span> ' : '';
+      return `<li><div><span class="where">${chip}${esc(where)}</span><span class="sub">${esc(bits.join(' · '))}</span></div>${detailsBtn(o.id)}</li>`;
     });
-    return `<div class="nearby card current${near.every((i) => i.o.plannedWork) ? ' planned-work' : ''}"><div class="nearby-head">${esc(nearbyCount(near))} near you</div><ul>${rows.join('')}</ul></div>`;
+    const where = muni || matches.q.muni;
+    // Collapsed under a heading with the count; opening it is kept across re-renders (setHTML leaves it alone).
+    return `<details class="others-section muni-now"><summary class="others-head">Outages now${where ? ' in ' + esc(where) : ' near you'} (${near.length})</summary><ul>${rows.join('')}</ul></details>`;
   }
 
   /** The matched outages' times, one line each; outages happening now are in the live box instead. */
@@ -644,8 +667,8 @@
   ${upcomingList(matches, now)}
   ${alertsControl()}
   ${more}
+  ${muniNowSection(matches, state.home.muni, now)}
 </div>
-${state.showMore ? '' : nearbyBox(matches, now)}
 ${homeOthers(now)}`);
   }
 
@@ -701,6 +724,7 @@ ${homeOthers(now)}`);
     if (r.mode === 'overview') return renderOverview();
     const tags = atHome && state.diff ? state.diff.byId : {};
     const parts = [];
+    if (!atHome) parts.push(muniPicker(r));
     // Unplanned outages are happening right now, so they come before anything scheduled.
     const hasPlanned = r.items.length > 0;
     if (r.current && r.current.length) {
@@ -727,6 +751,50 @@ ${homeOthers(now)}`);
     setHTML(els.results, parts.join(''));
     if (atHome) setHTML(els.status, '');
     else summary(r);
+  }
+
+  /**
+   * With no municipality given, a street search can match the same street name in several places. Then a row of
+   * buttons, one per municipality with its count of matches, narrows the search to one (the overview's chips).
+   */
+  function muniPicker(r) {
+    if (state.muni || r.q.muni || !r.q.key || (r.mode !== 'address' && r.mode !== 'text')) return '';
+    const counts = muniCounts(r);
+    if (counts.size < 2) return '';
+    const chips = [...counts.entries()].map(([m, n]) => `<button type="button" class="chip" data-muni="${esc(m)}">${esc(m)}<span class="n">${n}</span></button>`).join('');
+    return `<div class="muni-picker"><p class="group-head">${esc(r.q.street || state.query)} is in ${counts.size} municipalities. Pick yours:</p><div class="chips">${chips}</div></div>`;
+  }
+
+  /** The municipalities a search's results are in, with how many each, by name. */
+  function muniCounts(r) {
+    const counts = new Map();
+    for (const { o } of r.items.concat(r.current || [])) {
+      const names = o.municipalities && o.municipalities.length ? o.municipalities : String(o.municipality || '').split(/,\s*/);
+      for (const m of new Set(names.filter(Boolean))) counts.set(m, (counts.get(m) || 0) + 1);
+    }
+    return new Map([...counts.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+  }
+
+  /**
+   * Save Address with no municipality: ask for it first, since the same street name is used in many places.
+   * Offers the municipalities where the street has outages listed, any municipality by name, or saving as is.
+   */
+  function askMuniDialog() {
+    const r = search();
+    const counts = r.q.key && (r.mode === 'address' || r.mode === 'text') ? muniCounts(r) : new Map();
+    const chips = [...counts.keys()].map((m) => `<button type="button" class="chip" data-save-muni="${esc(m)}">${esc(m)}</button>`).join('');
+    openDialog(`<h3>Which municipality?</h3>
+<p>The same street name is used in many places, so the municipality makes sure only outages for <strong>${esc(state.query)}</strong> are shown.</p>
+${chips ? `<p class="muted">${esc(r.q.street || state.query)} has outages listed in:</p><div class="chips">${chips}</div>` : ''}
+<p><label for="dialog-muni">${chips ? 'Somewhere else' : 'Municipality'}</label><br><input id="dialog-muni" type="text" list="muni-list" placeholder="e.g. Bowen Island" autocomplete="address-level2" spellcheck="false"></p>
+<div class="actions"><button type="button" class="btn link small" id="dialog-save-anyway">Save without</button> <button type="button" class="btn link small" id="dialog-close">Cancel</button> <button type="button" class="btn small primary" id="dialog-muni-save">Save</button></div>`);
+  }
+
+  /** Save the address with a municipality chosen in the dialog. */
+  function saveWithMuni(muni) {
+    closeDialog();
+    state.muni = muni; els.muni.value = muni; writeState();
+    saveHome(state.query, muni);
   }
 
   /** Offer to install the page as an app where that is possible and not yet done. */
@@ -920,7 +988,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
 
   function renderOverview(target) {
     const now = Date.now();
-    const active = state.outages.filter((o) => state.past || statusOf(o, now) !== 'finished');
+    const active = state.outages.filter((o) => state.past || !M.longFinished(o, now));
     const byRegion = new Map();
     for (const o of active.concat(state.current)) {
       if (!byRegion.has(o.regionName)) byRegion.set(o.regionName, new Map());
@@ -961,6 +1029,8 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       else badges.push(`<span class="badge ${m.streetScore >= 2 ? 'hit' : ''}">${m.streetScore >= 2 ? 'Street listed' : 'Similar street name'}</span>`);
       if (!item.muniMatch) badges.push(`<span class="badge muted">${esc(o.municipality)}, not ${esc(state.muni || q.muni)}</span>`);
     }
+    // The summary leaves out the match chips, but not this one: the street is listed, the house number is not.
+    if (m && summary && m.numberListed === false && q && q.number) badges.push(`<span class="badge warn" title="${esc(q.number)} is not in the listed numbers">Near you: ${esc(m.segment.label.replace(/\s+/g, ' '))}</span>`);
     if (chip) badges.push(`<span class="badge muted">${esc(chip)}</span>`);
     badges.push(statusBadge(o, st, now));
     const notes = cardNotes(o);
@@ -1060,10 +1130,11 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
 
   /** The streets of an outage; `after` (planned outages' BC Hydro note) goes below the matching streets. */
   function addressList(o, m, q, after = '') {
+    let excluded = false;
     const item = (s, isMatch, numW) => {
       const loc = s.locality && s.locality !== o.municipality ? ` <span class="loc">(${esc(s.locality)})</span>` : '';
       const qual = s.qualifier ? ` <span class="qual">(${esc(s.qualifier)})</span>` : '';
-      const cls = isMatch ? 'match' : '';
+      const cls = isMatch ? (excluded ? 'match excluded' : 'match') : '';
       if (!numW) return `<li class="${cls}">${esc(s.label)}${qual}${loc}</li>`;
       // House numbers right-aligned in their own column so the street names line up; a long list goes under the name.
       const { nums, name } = splitLabel(s);
@@ -1091,9 +1162,11 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (!all.length) return after;
     if (!m) return box(list(all, () => false)) + after;
     const onStreet = all.filter((s) => s === m.segment || (q && q.key && P.streetScore(q, s) >= 2));
+    // The street is listed with house numbers, and the address's number is not among them: not shown as a hit.
+    excluded = m.numberListed === false;
     // Above the matching streets, say how they matched.
-    const how = m.numberListed === true ? 'Your address is listed' : m.mention ? 'Your street is named in the notice' : m.streetScore >= 2 ? 'Your street is listed' : 'Similar street name';
-    let html = `<p class="addr-label${m.streetScore >= 2 && !m.mention ? '' : ' weak'}">${how}</p>${box(list(onStreet, (s) => s === m.segment))}`;
+    const how = excluded ? `Your street is listed, but not ${esc(q && q.number ? q.number : 'your house number')}` : m.numberListed === true ? 'Your address is listed' : m.mention ? 'Your street is named in the notice' : m.streetScore >= 2 ? 'Your street is listed' : 'Similar street name';
+    let html = `<p class="addr-label${excluded ? ' excluded' : m.streetScore >= 2 && !m.mention ? '' : ' weak'}">${how}</p>${box(list(onStreet, (s) => s === m.segment))}`;
     html += after;
     // The full list keeps the matching streets in their alphabetical place, in bold.
     if (all.length > onStreet.length) {
@@ -1105,6 +1178,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   function statusBadge(o, st, now) {
     if (st === 'cancelled') return '<span class="badge danger">Cancelled</span>';
     if (st === 'in progress') return '<span class="badge danger">In progress now</span>';
+    if (st === 'finished' && M.endedToday(o, now)) return `<span class="badge hit" title="Its scheduled end has passed; it stays listed until the end of the day">Ended ${fmtAgo(now - o.dateOn)}</span>`;
     if (st === 'finished') return '<span class="badge muted">Finished</span>';
     return `<span class="badge">Starts ${fmtRelative(o.dateOff - now)}</span>`;
   }
@@ -1211,10 +1285,20 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   }
   els.q.addEventListener('input', onInput);
   els.form.addEventListener('submit', (e) => {
-    e.preventDefault(); clearTimeout(timer);
-    state.query = els.q.value.trim(); absorbMuni(); writeState();
+    e.preventDefault(); clearTimeout(timer); clearTimeout(muniTimer);
+    // Both boxes as they are now: typing (or autofill) only reaches the state after a short delay.
+    state.query = els.q.value.trim(); state.muni = els.muni.value.trim(); absorbMuni(); writeState();
+    if (state.query && queryIsAddress() && !(state.muni || '').trim()) { render(); askMuniDialog(); return; }
     if (state.query && queryIsAddress()) saveHome(state.query, state.muni);
-    else render();
+    else {
+      // Nothing to save: say what is missing and put the cursor where it goes, rather than doing nothing.
+      render();
+      setHTML(els.status, state.query
+        ? `<strong>“${esc(state.query)}” is not a street address.</strong> Type your street, e.g. 123 Main St, then press Save Address.`
+        : '<strong>Type your street address</strong>, e.g. 123 Main St, then press Save Address.');
+      els.q.focus();
+      return;
+    }
     els.q.blur();
   });
   els.q.addEventListener('blur', () => { const v = els.q.value.trim(); if (v !== state.query) { clearTimeout(timer); state.query = v; absorbMuni(); writeState(); render(); } });
@@ -1371,9 +1455,25 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     const badge = box.parentElement.querySelector('.state');
     if (badge) { badge.textContent = box.checked ? 'on' : 'off'; badge.classList.toggle('on', box.checked); }
   });
+  // Enter in the dialog's municipality box saves, as the Save button does.
+  els.dialog.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.id === 'dialog-muni') { e.preventDefault(); els.dialog.querySelector('#dialog-muni-save').click(); }
+  });
   els.dialog.addEventListener('click', async (e) => {
     const id = e.target.id;
+    const pick = e.target.closest('[data-save-muni]');
+    if (pick) { saveWithMuni(pick.dataset.saveMuni); return; }
     if (id === 'dialog-close') closeDialog();
+    else if (id === 'dialog-save-anyway') { closeDialog(); saveHome(state.query, ''); }
+    else if (id === 'dialog-muni-save') {
+      const text = els.dialog.querySelector('#dialog-muni').value.trim();
+      const set = resolveMunis(text);
+      const name = set && set.size === 1 ? state.munis.find((m) => m.toLowerCase() === [...set][0]) : '';
+      if (name) { saveWithMuni(name); return; }
+      let note = els.dialog.querySelector('.alerts-msg');
+      if (!note) { note = document.createElement('p'); note.className = 'alerts-msg'; els.dialog.querySelector('.actions').before(note); }
+      note.textContent = !text ? 'Type a municipality, or pick one above.' : set && set.size > 1 ? `“${text}” matches several municipalities: pick one from the list.` : `BC Hydro lists no municipality called “${text}”.`;
+    }
     else if (id === 'home-alerts-go') {
       const wanted = [...els.dialog.querySelectorAll('input[name="topic"]:checked')].map((i) => i.value);
       if (!wanted.length && !A.topics().length) {

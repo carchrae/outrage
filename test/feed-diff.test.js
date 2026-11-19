@@ -133,7 +133,7 @@ test('notification text: one plain line per change, street level only', async ()
   assert.equal(n.title, 'Adams Rd, Bowen Island');
   assert.equal(n.body.split('\n').length, 5);
   assert.match(n.body, /\+1 more$/);
-  assert.ok(!/1261|house/.test(n.body));
+  assert.ok(!/123|house/.test(n.body));
 });
 
 test('municipality topic: every outage in the town, named by street; street topic unchanged', async () => {
