@@ -440,7 +440,7 @@
     for (const { o, match } of items) {
       const prev = byId.get(String(o.id));
       const entry = {
-        id: o.id, kind: o.kind, dateOff: o.dateOff, dateOn: o.dateOn, municipality: o.municipality, cause: o.cause,
+        id: o.id, kind: o.kind, regionId: o.regionId, gisId: o.gisId || null, dateOff: o.dateOff, dateOn: o.dateOn, municipality: o.municipality, cause: o.cause,
         customers: o.numCustomersOut, cancelled: o.parsed.flags.cancelled, listed: match.numberListed,
         segment: match.segment.label, firstSeen: prev ? prev.firstSeen : now, lastSeen: now,
       };
@@ -466,7 +466,7 @@
       else st = 'finished';
       const resched = e.rescheduledFrom ? ` <span class="muted">(moved from ${esc(fmtWindow(e.rescheduledFrom.dateOff, e.rescheduledFrom.dateOn))})</span>` : '';
       const when = e.kind === 'current' ? `${/\bplanned work\b/i.test(e.cause || '') ? 'Planned work' : 'Unplanned'}, started ${esc(fmtDateTime(e.dateOff))}` : esc(fmtWindow(e.dateOff, e.dateOn));
-      return `<li><span class="hist-when">${when}</span> <span class="badge muted">${st}</span>${resched}<br><span class="muted">${esc(e.segment)} · ${esc(e.cause || '')} · first seen ${esc(fmtDay(e.firstSeen))} · #${e.id}</span></li>`;
+      return `<li><span class="hist-when">${when}</span> <span class="badge muted">${st}</span>${resched}<br><span class="muted">${esc(e.segment)} · ${esc(e.cause || '')} · first seen ${esc(fmtDay(e.firstSeen))} · ${idLink(e)}</span></li>`;
     }).join('');
     return `<details class="history"><summary>History for this address (${entries.length} outage${entries.length === 1 ? '' : 's'} seen)</summary><ul>${rows}</ul><p class="hint">Recorded in this browser each time you visit, starting from when you saved the address.</p></details>`;
   }
@@ -1057,7 +1057,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     return top + `
   <details class="raw"><summary>Original area text from BC Hydro</summary><pre>${esc(o.parsed.text)}</pre></details>
   ${o.related.length ? `<p class="related">Same time window in ${esc(o.municipality)} (likely the same job):${o.related.map((id) => `<button type="button" data-goto="${id}">#${id}</button>`).join('')}</p>` : ''}
-  <p class="card-foot"><span>Outage #${o.id}</span><span>Listing updated ${fmtDateTime(o.lastUpdated)}</span><a href="${OFFICIAL}#planned-${o.regionId}" rel="noopener" target="_blank">View region on bchydro.com</a></p>
+  <p class="card-foot"><span>Outage ${idLink(o)}</span><span>Listing updated ${fmtDateTime(o.lastUpdated)}</span><a href="${OFFICIAL}#planned-${o.regionId}" rel="noopener" target="_blank">View region on bchydro.com</a></p>
 </article>`;
   }
 
@@ -1082,7 +1082,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Cause not yet known')}</p>
   <p class="meta">${restore}${eta}${o.crewStatusNote ? ' · ' + esc(o.crewStatusNote) : ''}</p>
   ${segs}
-  <p class="card-foot"><span>Outage #${o.id}</span><span>Updated ${fmtDateTime(o.lastUpdated)}</span><a href="${MAP}${o.id}" rel="noopener" target="_blank">View on map</a><a href="${OFFICIAL_CURRENT}#current-${o.regionId}" rel="noopener" target="_blank">bchydro.com</a></p>
+  <p class="card-foot"><span>Outage ${idLink(o)}</span><span>Updated ${fmtDateTime(o.lastUpdated)}</span><a href="${MAP}${o.id}" rel="noopener" target="_blank">View on map</a><a href="${OFFICIAL_CURRENT}#current-${o.regionId}" rel="noopener" target="_blank">bchydro.com</a></p>
 </article>`;
   }
 
@@ -1173,6 +1173,16 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       html += `<details class="more-streets"><summary>Streets in this outage (${all.length})</summary>${box(list(all, (s) => onStreet.includes(s)))}</details>`;
     }
     return html;
+  }
+
+  /**
+   * An outage's number. A current outage with a map shape (gisId) links to it on BC Hydro's outage map, as BC
+   * Hydro's own list does; BC Hydro has no working link for any other single outage, so those are plain text.
+   */
+  function idLink(o) {
+    const id = `#${esc(String(o.id))}`;
+    if (o.kind !== 'current' || !o.gisId) return id;
+    return `<a class="outage-id" href="${esc(MAP + o.id)}" rel="noopener" target="_blank" title="This outage on BC Hydro's outage map">${id}</a>`;
   }
 
   function statusBadge(o, st, now) {
