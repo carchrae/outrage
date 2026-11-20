@@ -86,17 +86,6 @@
     const current = fed.current;
     current.sort((a, b) => b.numCustomersOut - a.numCustomersOut);
     state.current = current;
-    // Outages sharing municipality + time window are usually one job split over several listings ("Cont'd").
-    const groups = new Map();
-    for (const o of outages) {
-      const key = o.municipality + '|' + o.dateOff + '|' + o.dateOn;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(o);
-    }
-    for (const o of outages) {
-      const g = groups.get(o.municipality + '|' + o.dateOff + '|' + o.dateOn);
-      o.related = g.length > 1 ? g.filter((x) => x !== o).map((x) => x.id) : [];
-    }
     outages.sort((a, b) => a.dateOff - b.dateOff);
     state.outages = outages;
     state.byMuni = new Map();
@@ -1054,7 +1043,6 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (summary) return top + `\n</article>`;
     return top + `
   <details class="raw"><summary>Original area text from BC Hydro</summary><pre>${esc(o.parsed.text)}</pre></details>
-  ${o.related.length ? `<p class="related">Same time window in ${esc(o.municipality)} (likely the same job):${o.related.map((id) => `<button type="button" data-goto="${id}">#${id}</button>`).join('')}</p>` : ''}
   <p class="card-foot"><span>Outage ${idLink(o)}</span><span>Listing updated ${fmtDateTime(o.lastUpdated)}</span></p>
 </article>`;
   }
@@ -1326,17 +1314,10 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   if ('geolocation' in navigator && HAS_GEOCODER) els.locate.hidden = false;
   els.locate.addEventListener('click', () => locate());
   els.clear.addEventListener('click', () => { state.query = ''; state.muni = DEFAULT_MUNI; els.q.value = ''; els.muni.value = state.muni; writeState(); render(); els.q.focus(); });
-  /** Clicks on outage cards' buttons (details, same-time-window links), in both the results and the address panel. */
+  /** Clicks on outage cards' Details buttons, in both the results and the address panel. */
   function cardClick(e) {
     const details = e.target.closest('[data-details]');
     if (details) { showDetails(details.dataset.details); return true; }
-    const go = e.target.closest('[data-goto]');
-    if (go) {
-      let target = document.getElementById('o-' + go.dataset.goto);
-      if (!target) { state.past = true; els.past.checked = true; state.muni = ''; els.muni.value = ''; state.query = ''; els.q.value = ''; writeState(); render(); target = document.getElementById('o-' + go.dataset.goto); }
-      if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); target.classList.add('hit'); }
-      return true;
-    }
     return false;
   }
   els.results.addEventListener('click', (e) => {
@@ -1414,8 +1395,6 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (details) { showDetails(details.dataset.details); return; }
     if (e.target.id === 'changelog-auto') { editChangeLog({ autoClear: e.target.checked }); openChanges({ replace: true }); return; }
     if (e.target.id === 'changelog-clear') { if (window.confirm('Clear the change history for this address?')) { editChangeLog({ clear: true }); openChanges({ replace: true }); } return; }
-    // "Same time window" links point at cards on the page: close first, then go there.
-    if (e.target.closest('[data-goto]')) { closeSheet(); cardClick(e); }
   });
 
   els.home.addEventListener('click', (e) => {

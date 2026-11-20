@@ -127,8 +127,6 @@ a { color: var(--accent); }
 details.raw { margin-top: 8px; font-size: 0.88rem; color: var(--muted); }
 details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; font: inherit; }
 .card-foot { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.85rem; color: var(--muted); }
-.related { margin-top: 8px; font-size: 0.88rem; color: var(--muted); }
-.related button { font: inherit; font-size: 0.85rem; padding: 1px 8px; margin-left: 4px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--accent); cursor: pointer; }
 
 .overview h2 { font-size: 1rem; margin: 18px 0 8px; color: var(--muted); font-weight: 600; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -38,7 +38,7 @@
     const flat = (data, kind) => {
       const out = [];
       for (const r of (data && data.regions) || []) {
-        for (const o of r.outages || []) out.push({ ...o, kind, regionName: o.regionName || r.name, regionId: r.id, related: [], parsed: P.parseArea(o.area, munis) });
+        for (const o of r.outages || []) out.push({ ...o, kind, regionName: o.regionName || r.name, regionId: r.id, parsed: P.parseArea(o.area, munis) });
       }
       return out;
     };
