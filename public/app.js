@@ -6,8 +6,6 @@
   const A = window.OutageAlerts || null; // push alerts (optional module)
   const API = window.OUTAGE_API || '/api/planned';
   const API_CURRENT = window.OUTAGE_API_CURRENT || '/api/current';
-  const OFFICIAL = 'https://www.bchydro.com/power-outages/app/outage-list-planned.html';
-  const OFFICIAL_CURRENT = 'https://www.bchydro.com/power-outages/app/outage-list.html';
   const MAP = 'https://www.bchydro.com/power-outages/app/outage-map.html#outage=';
 
   const $ = (sel) => document.querySelector(sel);
@@ -1057,7 +1055,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     return top + `
   <details class="raw"><summary>Original area text from BC Hydro</summary><pre>${esc(o.parsed.text)}</pre></details>
   ${o.related.length ? `<p class="related">Same time window in ${esc(o.municipality)} (likely the same job):${o.related.map((id) => `<button type="button" data-goto="${id}">#${id}</button>`).join('')}</p>` : ''}
-  <p class="card-foot"><span>Outage ${idLink(o)}</span><span>Listing updated ${fmtDateTime(o.lastUpdated)}</span><a href="${OFFICIAL}#planned-${o.regionId}" rel="noopener" target="_blank">View region on bchydro.com</a></p>
+  <p class="card-foot"><span>Outage ${idLink(o)}</span><span>Listing updated ${fmtDateTime(o.lastUpdated)}</span></p>
 </article>`;
   }
 
@@ -1082,7 +1080,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   <p class="meta"><b>${esc(o.municipality)}</b> · ${customers} customer${o.numCustomersOut === 1 ? '' : 's'} · ${esc(o.cause || 'Cause not yet known')}</p>
   <p class="meta">${restore}${eta}${o.crewStatusNote ? ' · ' + esc(o.crewStatusNote) : ''}</p>
   ${segs}
-  <p class="card-foot"><span>Outage ${idLink(o)}</span><span>Updated ${fmtDateTime(o.lastUpdated)}</span><a href="${MAP}${o.id}" rel="noopener" target="_blank">View on map</a><a href="${OFFICIAL_CURRENT}#current-${o.regionId}" rel="noopener" target="_blank">bchydro.com</a></p>
+  <p class="card-foot"><span>Outage ${idLink(o)}</span><span>Updated ${fmtDateTime(o.lastUpdated)}</span>${o.gisId ? `<a href="${MAP}${o.id}" rel="noopener" target="_blank">View on map</a>` : ''}</p>
 </article>`;
   }
 
