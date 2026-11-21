@@ -59,7 +59,8 @@ when alerts are turned on, the street name and municipality (see "Push alerts").
 
 The "since your last visit" baseline is pinned in sessionStorage so a reload does not clear the
 notice. Changing or clearing the address resets the snapshot and history. The page always opens on
-the saved address; a `?q=` in the URL is only honoured when no address is saved.
+the saved address. The URL carries the address on screen (`?q=…&muni=…`) so it can be shared; a link
+to another address opens as a search and never changes the saved address.
 
 ## Data source
 

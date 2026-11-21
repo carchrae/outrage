@@ -1230,24 +1230,32 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
 
   // ------------------------------------------------------------ state <-> URL/storage
 
+  /*
+   * The URL carries the address on screen (?q=…&muni=…), so a link opens on the same search. A link to an address
+   * other than the saved one opens it as a search, with the saved address one click away.
+   */
   function readState() {
     const u = new URLSearchParams(location.search);
     const past = u.get('past') === '1';
     let q = '', muni = '';
-    if (state.home) { q = state.home.address; muni = state.home.muni || ''; }
-    else if (u.get('q') != null || u.get('muni') != null) { q = u.get('q') || ''; muni = u.get('muni') || DEFAULT_MUNI; }
-    else muni = DEFAULT_MUNI;
+    const linked = u.get('q') != null || u.get('muni') != null;
+    if (linked) { q = (u.get('q') || '').trim(); muni = (u.get('muni') || DEFAULT_MUNI).trim(); }
+    if (state.home && (!linked || (normText(q) === normText(state.home.address) && normText(muni) === normText(state.home.muni)))) {
+      q = state.home.address; muni = state.home.muni || ''; state.showSearch = false;
+    } else if (state.home) state.showSearch = true;
+    else if (!linked) muni = DEFAULT_MUNI;
     state.query = q; state.muni = muni; state.past = past;
     els.q.value = state.query; els.muni.value = state.muni; els.past.checked = state.past;
   }
   function writeState() {
-    // The saved address, not the URL, decides what the page opens on; only the "finished" toggle is kept in the URL.
     const u = new URLSearchParams();
+    if (state.query) u.set('q', state.query);
+    if (state.query && state.muni) u.set('muni', state.muni);
     if (state.past) u.set('past', '1');
     const qs = u.toString();
     const next = qs ? '?' + qs : '';
     if (location.search === next) return;
-    try { history.replaceState(null, '', next || location.pathname); } catch (e) { /* ignore */ }
+    try { history.replaceState(history.state, '', (next || location.pathname) + location.hash); lastSearch = location.search; } catch (e) { /* ignore */ }
   }
 
   // ------------------------------------------------------------ events
@@ -1426,7 +1434,9 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     }
     else if (id === 'home-show') { e.preventDefault(); state.showSearch = false; state.query = state.home.address; els.q.value = state.query; state.muni = state.home.muni || ''; els.muni.value = state.muni; writeState(); render(); }
   });
-  window.addEventListener('popstate', () => { readState(); render(); });
+  // The details dialog's own history entries keep the URL, so only a real change of address in the URL is read back.
+  let lastSearch = location.search;
+  window.addEventListener('popstate', () => { if (location.search === lastSearch) return; lastSearch = location.search; readState(); render(); });
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); state.installPrompt = e; render(); });
   window.addEventListener('appinstalled', () => { state.installPrompt = null; render(); });
   els.install.addEventListener('click', (e) => {

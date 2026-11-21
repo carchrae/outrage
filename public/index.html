@@ -16,7 +16,13 @@
   <script>
     // With a saved address the page opens straight on it: keep the header and form out of sight
     // until the feed has loaded instead of flashing them. app.js clears this attribute.
-    try { if (localStorage.getItem('outage-finder.home')) document.documentElement.setAttribute('data-boot', 'home'); } catch (e) { /* ignore */ }
+    // A link to another address (?q=) opens as a search instead, so the form stays visible.
+    try {
+      var home = JSON.parse(localStorage.getItem('outage-finder.home') || 'null');
+      var q = new URLSearchParams(location.search).get('q');
+      var norm = function (t) { return (t || '').trim().toLowerCase().replace(/\s+/g, ' '); };
+      if (home && (q == null || norm(q) === norm(home.address))) document.documentElement.setAttribute('data-boot', 'home');
+    } catch (e) { /* ignore */ }
   </script>
 </head>
 <body>
