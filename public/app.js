@@ -11,7 +11,7 @@
   const $ = (sel) => document.querySelector(sel);
   const els = {
     header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
-    freshness: $('#freshness'), status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), sheet: $('#outage-dialog'), locate: $('#locate'),
+    freshness: $('#freshness'), status: $('#status'), results: $('#results'), dataTimes: $('#data-times'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), sheet: $('#outage-dialog'), locate: $('#locate'),
   };
 
   const HOME_KEY = 'outage-finder.home';
@@ -27,7 +27,7 @@
   const HAS_GEOCODER = !!(geocoderMeta && geocoderMeta.content); // set at build time when BC_GEOCODER_KEY exists
 
   const state = {
-    outages: [], munis: [], byMuni: new Map(), updatedDate: 0, query: '', muni: '', past: false, loading: false, error: '',
+    outages: [], munis: [], byMuni: new Map(), lastChange: 0, query: '', muni: '', past: false, loading: false, error: '',
     home: readJSON(localStorage, HOME_KEY), baseline: undefined, diff: null, history: [], changeLog: [], changeLogAuto: false, showSearch: false,
     alertsBusy: false, alertsMsg: '', showMore: false, installPrompt: null,
     current: [], currentError: '',
@@ -126,16 +126,28 @@
     else renderFreshness();
   }, 30e3);
 
+  /** Footer line: when BC Hydro last changed an outage, and when this page last fetched the feeds. */
+  function renderDataTimes() {
+    if (!loadedAt) { setHTML(els.dataTimes, ''); return; }
+    const when = (ms) => (Date.now() - ms < 12 * 3600e3 ? fmtTime(ms) : fmtDateTime(ms));
+    const change = state.lastChange ? `Last update: <b>${esc(when(state.lastChange))}</b>` : '';
+    const checked = `Last check: <b>${esc(when(loadedAt))}</b>`;
+    setHTML(els.dataTimes, [change, checked].filter(Boolean).join(' · '));
+  }
+
   /** The "data from" bar: hidden while refreshing automatically, shown once that stops or keeps failing. */
   let checkFailed = false;
   function renderFreshness() {
+    renderDataTimes();
     const show = !!loadedAt && (Date.now() >= autoUntil || Date.now() - loadedAt > 5 * 60e3);
     if (els.freshness.hidden !== !show) els.freshness.hidden = !show;
     if (!show) return;
-    const at = `${fmtDateTime(loadedAt)} (${fmtAgo(Date.now() - loadedAt)})`;
+    // Lead with the age: the point is that what is shown may no longer be true.
+    const age = Date.now() - loadedAt;
+    const at = `${fmtAgo(age)} (${age < 12 * 3600e3 ? fmtTime(loadedAt) : fmtDateTime(loadedAt)})`;
     setHTML(els.freshness, loading
       ? `<span>Checking for updates…</span>`
-      : `<span>${checkFailed ? 'Could not check for updates. ' : ''}Showing outage data from <b>${esc(at)}</b></span><button type="button" class="btn small primary" id="check-updates">Check for updates</button>`);
+      : `<span><b>${checkFailed ? 'Could not check for updates.' : 'This may be out of date.'}</b> Outages last checked ${esc(at)}.</span><button type="button" class="btn small primary" id="check-updates">Check for updates</button>`);
   }
   els.freshness.addEventListener('click', (e) => {
     if (!e.target.closest('#check-updates')) return;
@@ -169,7 +181,9 @@
       if (!state.byMuni.has(o.municipality)) state.byMuni.set(o.municipality, []);
       state.byMuni.get(o.municipality).push(o);
     }
-    state.updatedDate = data.updatedDate || Date.now();
+    // The newest lastUpdated on any outage in either feed: when BC Hydro last changed something. The feeds' own
+    // updatedDate is when the file was last published, which happens every few minutes whether or not anything changed.
+    state.lastChange = fed.outages.concat(fed.current).reduce((m, o) => Math.max(m, Number(o.lastUpdated) || 0), 0);
     fillMuniSelect();
   }
 
@@ -1057,8 +1071,6 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     if (state.loading) setHTML(els.status, 'Loading BC Hydro planned outages…');
     else if (state.error) setHTML(els.status, `<div class="error">${esc(state.error)} <button type="button" class="btn link" id="retry">Retry</button></div>`);
     else setHTML(els.status, '');
-    const upd = state.updatedDate ? `Feed updated ${fmtDateTime(state.updatedDate)}.` : '';
-    if (els.updated.textContent !== upd) els.updated.textContent = upd;
     const retry = $('#retry');
     if (retry) retry.addEventListener('click', load);
   }
