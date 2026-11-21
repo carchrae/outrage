@@ -193,6 +193,46 @@
     return d.added.length + d.rescheduled.length + d.cancelled.length + d.updated.length + d.finished.length + d.removed.length;
   }
 
+  // ------------------------------------------------------------ planned listing <-> live job
+
+  /*
+   * Planned work shows up twice once it starts: the planned listing (schedule, street list) and an entry in the
+   * unplanned feed (crew status, actual start, the blocks really off). Neither carries the other's id, so they are
+   * paired by evidence: a street both name, the same municipality, the same end time (BC Hydro usually copies it),
+   * and a similar customer count. Each live job goes to at most one listing, best score first.
+   */
+  function jobScore(p, c) {
+    if (Math.abs((c.dateOff || 0) - (p.dateOff || 0)) > 3 * 3600e3) return 0;
+    const cores = (o) => new Set(((o.parsed && o.parsed.segments) || []).filter((s) => s.core && !s.boundary).map((s) => s.core));
+    const pc = cores(p);
+    const street = [...cores(c)].some((k) => pc.has(k));
+    const pm = new Set(munisOf(p)), muni = munisOf(c).some((m) => pm.has(m));
+    if (!street && !muni) return 0;
+    let score = (street ? 3 : 0) + (muni ? 1 : 0);
+    const dOn = Math.abs((c.dateOn || 0) - (p.dateOn || 0));
+    if (c.dateOn && p.dateOn) score += dOn < 60e3 ? 2 : dOn < 3600e3 ? 1 : 0;
+    const a = Number(p.numCustomersOut), b = Number(c.numCustomersOut);
+    if (a > 0 && b > 0) { const r = Math.abs(a - b) / Math.max(a, b); score += r <= 0.2 ? 2 : r <= 0.5 ? 1 : 0; }
+    return score >= 3 ? score : 0;
+  }
+  /**
+   * @param {object[]} planned planned outages in progress (from ingestFeeds().outages)
+   * @param {object[]} current from ingestFeeds().current; only planned work is considered
+   * @returns {Map<any, object>} planned outage id -> its live job
+   */
+  function pairJobs(planned, current) {
+    const cands = [];
+    for (const p of planned) for (const c of current) {
+      if (!c.plannedWork) continue;
+      const s = jobScore(p, c);
+      if (s) cands.push([s, p, c]);
+    }
+    cands.sort((x, y) => y[0] - x[0]);
+    const out = new Map(), used = new Set();
+    for (const [, p, c] of cands) if (!out.has(p.id) && !used.has(c.id)) { out.set(p.id, c); used.add(c.id); }
+    return out;
+  }
+
   // ------------------------------------------------------------ outage areas (unplanned feed)
 
   /**
@@ -231,5 +271,5 @@
     return out.sort((a, b) => (a.where === 'inside' ? 0 : 1) - (b.where === 'inside' ? 0 : 1));
   }
 
-  return { collectMunis, ingestFeeds, insidePolygon, outagesAt, isPlannedWork, longFinished, endedToday, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
+  return { collectMunis, ingestFeeds, insidePolygon, outagesAt, pairJobs, isPlannedWork, longFinished, endedToday, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
 });

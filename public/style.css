@@ -328,3 +328,14 @@ html:has(.sheet[open]) { overflow: hidden; }
 .here { margin: 8px 0; }
 .here .map-hits { margin: 6px 0 0; }
 .here .hint { margin: 6px 0 0; }
+.live-more { margin: 6px 0 0; display: flex; gap: 4px 16px; flex-wrap: wrap; }
+.live-more .btn.link { padding: 2px 0; }
+.live-btns { display: flex; flex-direction: column; align-items: stretch; gap: 6px; flex: none; }
+/* Outage boxes with a Details/Map column: the column floats right and each row is its own grid, so rows beside
+   the column narrow and rows below it use the full width, instead of everything starting below the column. */
+.live.float { display: flow-root; }
+.live.float .live-top { display: block; }
+.live.float .live-btns { float: right; margin: -4px -6px 6px 12px; }
+.live.float .live-rows { display: block; }
+.live.float .live-rows > div { display: grid; grid-template-columns: 7.4em 1fr; column-gap: 12px; align-items: baseline; margin-top: 6px; }
+.live.float .live-rows > div:first-child { margin-top: 0; }

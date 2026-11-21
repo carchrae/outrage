@@ -624,10 +624,15 @@
   /** A prominent box for each outage affecting the street right now: crew status, when power is expected back. */
   function liveStatus(matches, now) {
     let live = matches.strong.filter((i) => isLive(i.o, now));
-    // Planned work in progress shows up in both feeds; keep the unplanned-feed copy, which carries crew status.
-    const current = live.filter((i) => i.o.kind === 'current');
-    live = live.filter((i) => i.o.kind === 'current' || !current.some((c) => c.o.municipality === i.o.municipality && (Math.abs((c.o.dateOn || 0) - (i.o.dateOn || 1)) < 3600e3 || Math.abs(c.o.dateOff - i.o.dateOff) < 3600e3)));
+    // Planned work in progress shows up in both feeds. A listing paired with its live job gets one box with both;
+    // the live job is then not shown again on its own, here or in the "where you are" box.
+    const pairs = jobPairs(now);
+    const strongIds = new Set(matches.strong.map((i) => i.o.id));
+    for (const i of live) if (i.o.kind === 'planned' && pairs.has(i.o.id)) homeClaimed.add(pairs.get(i.o.id).id);
+    live = live.filter((i) => !(i.o.kind === 'current' && homeClaimed.has(i.o.id)));
+    for (const i of live) if (i.o.kind === 'current') homeClaimed.add(i.o.id); // shown here, so not again above
     return live.map(({ o, match }) => {
+      if (o.kind === 'planned' && pairs.has(o.id)) return jobBox(o, pairs.get(o.id), match, strongIds.has(pairs.get(o.id).id), now);
       const planned = o.kind === 'planned' || o.plannedWork;
       const rows = [];
       if (o.kind === 'current') {
@@ -638,8 +643,8 @@
       // A planned listing is only BC Hydro's schedule: say when the work is expected to start and end, not that power
       // went off then. The unplanned-feed copy of the same work (kind 'current') reports what actually happened.
       if (o.kind === 'planned') {
-        rows.push(['Expected start', scheduledTime(o.dateOff, now, 'start')]);
-        rows.push(['Expected end', o.dateOn ? scheduledTime(o.dateOn, now, 'end') : '<b>Not given</b>']);
+        rows.push(['Start', scheduledTime(o.dateOff, now, 'start')]);
+        rows.push(['End', o.dateOn ? scheduledTime(o.dateOn, now, 'end') : '<b>Not given</b>']);
         if (o.cause) rows.push(['Cause', esc(o.cause)]);
         rows.push(['Listed', `${o.numCustomersOut != null ? esc(fmtNum(o.numCustomersOut)) + ' customers · ' : ''}${esc(match.segment.label)}`]);
         return `<div class="live planned"><div class="live-top"><div class="live-head">Planned outage scheduled now on your street</div>${detailsBtn(o.id)}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
@@ -652,9 +657,52 @@
       if (o.cause) rows.push(['Cause', esc(o.cause)]);
       rows.push(['Affected', `${o.numCustomersOut != null ? esc(fmtNum(o.numCustomersOut)) + ' customers · ' : ''}${esc(match.segment.label)}`]);
       if (o.crewStatusNote) rows.push(['Note', esc(o.crewStatusNote)]);
-      const head = planned ? 'Planned work in progress on your street' : 'Power is out on your street';
-      return `<div class="live${planned ? ' planned' : ''}"><div class="live-top"><div class="live-head">${head}</div>${detailsBtn(o.id)}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
+      const here = o.kind === 'current' ? hereIds().get(o.id) : null;
+      const head = here === 'inside' ? (planned ? 'Planned work under way where you are' : 'Power is out where you are')
+        : planned ? 'Planned work under way on your street' : 'Power is out on your street';
+      // The buttons float right so the rows move up beside them instead of starting below Map.
+      return `<div class="live${planned ? ' planned' : ''} float"><div class="live-top">${o.kind === 'current' ? liveBtns(o) : `<span class="live-btns">${detailsBtn(o.id)}</span>`}<div class="live-head">${head}</div></div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
     }).join('');
+  }
+
+  // Live jobs already shown in the address panel this render (so the "where you are" box does not repeat them).
+  const homeClaimed = new Set();
+  let pairsCache = { key: null, map: new Map() };
+  /** Planned listings in progress -> their live job in the unplanned feed (see pairJobs in matcher.js). */
+  function jobPairs(now) {
+    if (pairsCache.key === state.current && pairsCache.outages === state.outages) return pairsCache.map;
+    const running = state.outages.filter((o) => statusOf(o, now) === 'in progress');
+    pairsCache = { key: state.current, outages: state.outages, map: M.pairJobs(running, state.current) };
+    return pairsCache.map;
+  }
+
+  /**
+   * One box for planned work under way: the live job's crew, actual start and restoration estimate, with the
+   * listing's schedule and cause, whether the saved street is in the blocks the live job names, and where the
+   * device is, when known.
+   */
+  /** Details, and under it Map when the live outage has an area to show. */
+  function liveBtns(o) {
+    const map = o.polygon && o.polygon.length ? `<button type="button" class="btn small" data-map="${esc(String(o.id))}">Map</button>` : '';
+    return `<span class="live-btns">${detailsBtn(o.id)}${map}</span>`;
+  }
+  function jobBox(o, job, match, streetLive, now) {
+    const here = hereIds().get(job.id);
+    const head = here === 'inside' ? 'Planned work under way where you are'
+      : streetLive ? 'Planned work under way on your street' : 'Planned work under way near your street';
+    const rows = [];
+    const idx = CREW_STEPS.indexOf(job.crewStatus);
+    const bar = idx >= 0 ? `<span class="crew-bar" title="${esc(job.crewStatusDescr || '')}">${CREW_STEPS.map((s, i) => `<span class="${i <= idx ? 'done' : ''}"></span>`).join('')}</span>` : '';
+    rows.push(['Crew', `<b>${esc(job.crewStatusDescr || 'No crew information')}</b>${bar}`]);
+    rows.push(['Expected back', job.dateOn ? backEstimate(job.dateOn, now) : '<b>No estimate yet</b>']);
+    rows.push(['Started', `${esc(fmtTime(job.dateOff))} <span class="muted">(${esc(fmtAgo(now - job.dateOff))}; scheduled ${esc(fmtWindow(o.dateOff, o.dateOn))})</span>`]);
+    if (o.cause && !/\bplanned work\b/i.test(o.cause)) rows.push(['Cause', esc(o.cause)]);
+    const street = match && match.segment ? esc(match.segment.label) : 'Your street';
+    rows.push(['Your street', streetLive ? `<b>${street}</b> is in the live outage area` : `<b>${street}</b> is on the planned list, but not in the blocks BC Hydro reports as out`]);
+    if (job.numCustomersOut != null) rows.push(['Customers', `${esc(fmtNum(job.numCustomersOut))} out <span class="muted">(${o.numCustomersOut != null ? esc(fmtNum(o.numCustomersOut)) + ' planned' : 'planned count not given'})</span>`]);
+    if (job.crewStatusNote) rows.push(['Note', esc(job.crewStatusNote)]);
+    const more = `<p class="live-more"><button type="button" class="btn link small" data-details="${esc(String(o.id))}">Planned listing</button></p>`;
+    return `<div class="live planned float"><div class="live-top">${liveBtns(job)}<div class="live-head">${head}</div></div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>${more}</div>`;
   }
 
   /*
@@ -774,8 +822,15 @@ ${homeOthers(now)}`);
   /** What the panel heading says: the state of the saved street in two words. */
   function panelTitle(matches, now) {
     const strong = matches.strong;
-    if (strong.some((i) => i.o.kind === 'current' && !i.o.plannedWork)) return { text: 'Power out', cls: 'is-out' };
-    if (strong.some((i) => i.o.plannedWork)) return { text: 'Planned outage now', cls: 'is-planned' };
+    // Live jobs on the street: unplanned outages, planned work, and the live job of a listing in progress.
+    const pairs = jobPairs(now);
+    const jobs = strong.filter((i) => i.o.kind === 'current').map((i) => i.o)
+      .concat(strong.filter((i) => i.o.kind === 'planned' && pairs.has(i.o.id)).map((i) => pairs.get(i.o.id)));
+    // "back ~6:30pm": the latest restoration estimate still ahead; none once they have all passed.
+    const ons = jobs.map((o) => o.dateOn).filter((t) => t && t > now);
+    const back = ons.length ? ` · back ~${Math.max(...ons) - now < 18 * 3600e3 ? fmtTime(Math.max(...ons)) : fmtDateTime(Math.max(...ons))}` : '';
+    if (jobs.some((o) => !o.plannedWork)) return { text: 'Power out' + back, cls: 'is-out' };
+    if (jobs.length) return { text: 'Planned work' + (back || ' under way'), cls: 'is-planned' };
     if (strong.some((i) => statusOf(i.o, now) === 'in progress')) return { text: 'Planned outage scheduled now', cls: 'is-planned' };
     if (strong.some((i) => statusOf(i.o, now) === 'upcoming')) return { text: 'Planned outage', cls: 'is-planned' };
     return { text: 'No outage', cls: 'is-clear' };
@@ -808,10 +863,11 @@ ${homeOthers(now)}`);
     renderStatus();
     if (state.error || state.loading) { setHTML(els.results, ''); setHTML(els.home, ''); setHTML(els.here, ''); return; }
     const now = Date.now();
-    renderHere(now);
     let home = null;
     if (state.home) { home = homeMatches(now); updateHomeSnapshot(home, now); }
+    homeClaimed.clear();
     renderHome(home, now);
+    renderHere(now); // after the address panel, which may already show the outage at the device's location
     renderInstall();
     const atHome = queryIsHome();
     if (atHome && !state.showSearch && !state.showMore) { setHTML(els.results, ''); setHTML(els.status, ''); return; }
@@ -1495,15 +1551,16 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   let myPlace = null;
   const OUT_COLOR = '#d9480f', WORK_COLOR = '#c98a00';
 
-  function openMap() {
+  /** `focus`: an outage id to centre on (the Map button on an outage) instead of the device's surroundings. */
+  function openMap(focus) {
     const body = `<p class="map-result" id="map-result" aria-live="polite">${myPlace ? '' : 'Finding your location…'}</p>
 <div id="outage-map" class="outage-map" role="region" aria-label="Map of current outages"></div>
 <p class="map-legend"><span class="key" style="--c:${OUT_COLOR}"></span>Unplanned outage <span class="key" style="--c:${WORK_COLOR}"></span>Planned work under way <span class="key me"></span>You</p>
 <p class="hint">Your location is checked against BC Hydro's outage areas on this device only; it is not saved or sent anywhere. The map pictures come from OpenStreetMap. Planned outages that have not started have no map area: search your address to check those.</p>`;
-    openSheet('Am I in an outage?', body, { onShow: showMap });
+    openSheet('Am I in an outage?', body, { onShow: () => showMap(focus) });
   }
 
-  async function showMap() {
+  async function showMap(focus) {
     const box = els.sheet.querySelector('#outage-map');
     if (!box) return;
     const place = myPlace && Date.now() - myPlace.at < 5 * 60e3 ? Promise.resolve(myPlace) : findMe();
@@ -1535,7 +1592,9 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       const homeMuni = state.home && state.home.muni ? state.home.muni.toLowerCase() : '';
       const local = homeMuni ? state.current.filter((o) => areas.has(o.id) && String(o.municipality || '').toLowerCase().includes(homeMuni)) : [];
       const start = (local.length ? local.map((o) => areas.get(o.id)) : [...areas.values()]);
-      if (start.length) map.fitBounds(L.featureGroup(start).getBounds(), { padding: [12, 12], maxZoom: 15 });
+      const focused = focus != null ? [...areas].find(([id]) => String(id) === String(focus)) : null;
+      if (focused) map.fitBounds(focused[1].getBounds(), { padding: [16, 16], maxZoom: 16 });
+      else if (start.length) map.fitBounds(L.featureGroup(start).getBounds(), { padding: [12, 12], maxZoom: 15 });
       else map.setView([53.7, -124.5], 5);
       box._map = map; box._areas = areas;
     }
@@ -1550,7 +1609,11 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       L.circle([me.lat, me.lon], { radius: me.acc, color: '#1c64d6', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
       L.circleMarker([me.lat, me.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#1c64d6', fillOpacity: 1 }).addTo(map).bindTooltip('You');
       const mine = hits.map((h) => box._areas.get(h.o.id)).filter(Boolean);
-      if (mine.length) map.fitBounds(L.featureGroup(mine).getBounds().extend([me.lat, me.lon]), { padding: [16, 16], maxZoom: 16 });
+      if (focus != null) {
+        // Centred on the chosen outage; bring the device in only when it is in that outage's area.
+        const f = [...box._areas].find(([id]) => String(id) === String(focus));
+        if (f && hits.some((h) => String(h.o.id) === String(focus))) map.fitBounds(f[1].getBounds().extend([me.lat, me.lon]), { padding: [16, 16], maxZoom: 16 });
+      } else if (mine.length) map.fitBounds(L.featureGroup(mine).getBounds().extend([me.lat, me.lon]), { padding: [16, 16], maxZoom: 16 });
       else map.setView([me.lat, me.lon], me.acc > 2000 ? 11 : 14);
     }
   }
@@ -1602,6 +1665,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   /** The box at the top of the page when the device is inside or near an outage area. */
   function renderHere(now) {
     const here = hereIds();
+    for (const id of homeClaimed) here.delete(id);
     if (!here.size) { setHTML(els.here, ''); return; }
     const hits = state.current.filter((o) => here.has(o.id)).sort((a, b) => (here.get(a.id) === 'inside' ? 0 : 1) - (here.get(b.id) === 'inside' ? 0 : 1));
     const inside = hits.filter((o) => here.get(o.id) === 'inside');
@@ -1732,6 +1796,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     }
     else if (id === 'changes-open') openChanges();
     else if (id === 'home-map') { e.preventDefault(); openMap(); }
+    else if (b && b.dataset.map) openMap(b.dataset.map);
     else if (id === 'home-more') {
       state.showMore = !state.showMore; render();
       if (state.showMore) els.results.scrollIntoView({ behavior: 'smooth', block: 'start' });

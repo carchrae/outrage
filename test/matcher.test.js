@@ -94,3 +94,23 @@ test('insidePolygon and outagesAt: inside, near the edge within the accuracy, or
   assert.deepEqual(M.outagesAt(outages, 49.385, -123.322, 50), []);
   assert.deepEqual(M.outagesAt(outages, 49.385, -123.20, 50000), [], 'accuracy is capped at 1 km');
 });
+
+test('pairJobs: a planned listing in progress gets its own live job, one job per listing', () => {
+  const H = 3600e3, t0 = Date.UTC(2026, 10, 21, 16);
+  const work = 'Planned work being done on our equipment';
+  const fed = M.ingestFeeds(
+    feed([
+      o(1, '488 - 554 E 15th Ave; 501 - 561 E 16th Ave', 'Vancouver', { dateOff: t0, dateOn: t0 + 10 * H, numCustomersOut: 178 }),
+      o(2, '8668, 8686 Shaughnessy St; 911 W 71 Ave', 'Vancouver', { dateOff: t0, dateOn: t0 + 8.5 * H, numCustomersOut: 91 }),
+      o(3, '26489 Fraser Hwy', 'Aldergrove', { dateOff: t0 - 0.5 * H, dateOn: t0 + 7.5 * H, numCustomersOut: 1 }),
+      o(4, '100 Main St', 'Hope', { dateOff: t0, dateOn: t0 + 5 * H, numCustomersOut: 40 }),
+    ], ['Vancouver', 'Aldergrove', 'Hope', 'Langley']),
+    feed([
+      o(91, 'West of CAROLINA ST, North of 16TH AVE', 'Vancouver', { dateOff: t0 + H, dateOn: t0 + 10 * H, numCustomersOut: 177, cause: work }),
+      o(92, 'South of 70TH AVE, West of FREMLIN ST', 'Vancouver', { dateOff: t0 + H, dateOn: t0 + 8.5 * H, numCustomersOut: 91, cause: work }),
+      o(93, '26400 block FRASER HWY', 'Langley', { dateOff: t0, dateOn: t0 + 7.5 * H, numCustomersOut: 1, cause: work }),
+      o(94, '200 block MAIN ST', 'Hope', { dateOff: t0, dateOn: t0 + 5 * H, numCustomersOut: 40, cause: 'Tree down' }),
+    ], ['Vancouver', 'Langley', 'Hope']));
+  const pairs = M.pairJobs(fed.outages, fed.current);
+  assert.deepEqual([...pairs].map(([p, c]) => [p, c.id]).sort(), [[1, 91], [2, 92], [3, 93]]);
+});
