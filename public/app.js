@@ -899,7 +899,7 @@ ${list(facts)}<div class="actions"><button type="button" class="btn small primar
     // The ON/OFF badge follows the tick box, so the dialog always reads as what Save will do.
     const row = (key, label, detail, checked, disabled) => `<label class="opt${disabled ? ' off' : ''}"><input type="checkbox" name="topic" value="${key}"${checked ? ' checked' : ''}${disabled ? ' disabled' : ''}><span><b>${label}</b> <span class="muted">${detail}</span><span class="state${checked ? ' on' : ''}">${checked ? 'on' : 'off'}</span></span></label>`;
     const options = `<div class="opts">
-${row('street', esc(street), 'outages that list your street', on.includes('street'), blocked)}
+${row('street', esc(street), 'outages that list your street, and a reminder 24 hours and 1 hour before a planned one starts', on.includes('street'), blocked)}
 ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every outage in ' + esc(muni) + ', planned or unplanned' : 'add a municipality to your address to use this', on.includes('muni'), blocked || !muni)}
 </div>`;
     const note = blocked ? `<p class="alerts-msg">Notifications are blocked for this site in your browser settings. Allow them there, then come back.</p>` : '';
@@ -913,7 +913,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   /** The one-time offer's opening line: what alerts do for the saved street. */
   function alertsIntro() {
     const q = P.parseQuery(state.home.address, state.munis);
-    return `Alerts are off. Turn them on to get a notification when an outage on ${esc(q.street || state.home.address)} changes.`;
+    return `Alerts are off. Turn them on to get a notification when an outage on ${esc(q.street || state.home.address)} changes, and a reminder 24 hours and 1 hour before a planned one starts.`;
   }
   /**
    * Offer alerts once, without nagging: right after an install is accepted, and on the first open of the

@@ -106,6 +106,13 @@ unit, snapshot and history never leave the browser. Unticking both turns alerts 
   titled with the municipality and each line starts with the street it is about. It is street level, since the
   server never knows a house number. `public/sw.js` just shows it; clicking opens the site, which
   works out the exact changes for the saved address.
+- Street subscribers also get a reminder when a planned outage on their street is 24 hours and
+  1 hour from starting ("Tomorrow: planned outage Sat, Dec 5 10:00 a.m. – 2:00 p.m.", "Today: …").
+  The label is the day as of sending, never a countdown, since a push can arrive late. Each run
+  sends the reminders whose mark fell since the previous run, so nothing extra is stored and a missed
+  run sends them late rather than twice. Cancelled outages get none, and municipality-wide subscribers
+  get none (they would be reminded of every job in town). A reminder that lands in the same run as a
+  change goes out in the same notification.
 - Subscriptions are re-sent on every visit when the street changed or the record is a week old, and
   removed when the address is cleared.
 - The worker also caches the page, its assets and the last copy of each feed (network first), so the

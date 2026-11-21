@@ -13,6 +13,9 @@ Written 2026-11-02, implemented 2026-11-05. The design below was built as descri
   something else. Three consecutive push failures, or a 404/410, delete the subscription. The page re-sends
   the street on each visit when it changed or the record is over a week old. Email was not built.
 
+- Reminders (2026-11-21): street subscribers are also pushed 24 hours and 1 hour before a planned outage
+  on their street starts. See the README.
+
 Setup is in the README under "Push alerts".
 
 ## Goal

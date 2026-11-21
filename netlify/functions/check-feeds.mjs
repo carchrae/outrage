@@ -1,7 +1,7 @@
 /*
  * Scheduled function, every 10 minutes: fetch both BC Hydro feeds, diff them against the copy kept from
  * the previous run, and push to the subscribers whose street is listed by an outage that was
- * added, changed or removed. The push carries the notification text itself (street level only,
+ * added, changed or removed, or by a planned outage starting in 24 hours or 1 hour. The push carries the notification text itself (street level only,
  * the server never knows a house number), so the worker just shows it.
  *
  * Needs VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT (a mailto: or https: URL) in the
@@ -9,7 +9,7 @@
  */
 import { getStore } from '@netlify/blobs';
 import webpush from 'web-push';
-import { slimFeed, collectMunis, diffFeeds, pickSubscribers, pruneToSubscribers, notificationFor } from './lib/feed-diff.mjs';
+import { slimFeed, collectMunis, diffFeeds, pickSubscribers, pruneToSubscribers, notificationFor, dueReminders } from './lib/feed-diff.mjs';
 
 export const config = { schedule: '*/10 * * * *' };
 
@@ -56,10 +56,21 @@ export async function run({ store, send, log = console.log, now = Date.now() }) 
   // When the unplanned feed failed this run, do not report every unplanned outage as removed.
   const prevOutages = current ? prev.outages : prev.outages.filter((o) => o.kind !== 'current');
   const changed = diffFeeds(prevOutages, next.outages);
-  if (!changed.length) { log(`no changes for ${next.cores.length} subscribed streets and municipalities`); return { changed: 0, pushed: 0 }; }
+  // Planned outages 24 hours or 1 hour from starting. A reminder needs no baseline, so new subscribers get it too.
+  const due = dueReminders(next.outages, prev.at, now);
+  if (!changed.length && !due.length) { log(`no changes for ${next.cores.length} subscribed streets and municipalities`); return { changed: 0, reminders: 0, pushed: 0 }; }
 
   const hits = pickSubscribers(subs, changed, munis, new Set(prev.cores || []));
-  log(`${changed.length} changed outages, ${subs.length} subscribers, ${hits.size} to notify`);
+  // Reminders go to street subscribers only: a municipality-wide one would be reminded of every job in town.
+  for (const [id, r] of pickSubscribers(subs, due, munis)) {
+    const outages = r.outages.filter((o) => o.via === 'street');
+    if (!outages.length) continue;
+    const h = hits.get(id);
+    if (!h) { hits.set(id, { ...r, ids: outages.map((o) => o.id), outages }); continue; }
+    for (const o of outages) { h.outages.push(o); if (!h.ids.includes(o.id)) h.ids.push(o.id); h.kinds.add(o.kind); }
+    if (!h.street) h.street = r.street;
+  }
+  log(`${changed.length} changed outages, ${due.length} reminders, ${subs.length} subscribers, ${hits.size} to notify`);
 
   let pushed = 0, dropped = 0;
   await mapLimit([...hits.values()], CONCURRENCY, async (hit) => {
@@ -77,7 +88,7 @@ export async function run({ store, send, log = console.log, now = Date.now() }) 
     }
   });
   log(`pushed ${pushed}, dropped ${dropped}`);
-  return { changed: changed.length, pushed, dropped };
+  return { changed: changed.length, reminders: due.length, pushed, dropped };
 }
 
 function stripId(sub) { const { id, ...rest } = sub; return rest; }

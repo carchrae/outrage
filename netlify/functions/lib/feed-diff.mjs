@@ -54,6 +54,28 @@ export function diffFeeds(prev, next) {
   return out;
 }
 
+const HOUR = 3600e3;
+export const REMINDER_HOURS = [24, 1];
+
+/**
+ * Planned outages whose start is 24 hours or 1 hour away, as of this run: the mark fell after the previous
+ * run (`from`) and no later than this one (`to`), so each reminder goes out once even when a run is missed.
+ * Cancelled outages, and ones that have already started, get none. The wording is worked out from the send
+ * time, not the mark, so a late run still names the right day (see reminderLabel).
+ * @returns {Array<object & {change:'reminder', lead:number}>}
+ */
+export function dueReminders(outages, from, to) {
+  const out = [];
+  if (!Number.isFinite(from) || !(to > from)) return out;
+  for (const o of outages) {
+    if (o.kind !== 'planned' || o.cancelled || !Number.isFinite(o.dateOff) || o.dateOff <= to) continue;
+    // The nearest mark wins when a long gap between runs crossed both.
+    const lead = REMINDER_HOURS.slice().reverse().find((h) => { const mark = o.dateOff - h * HOUR; return mark > from && mark <= to; });
+    if (lead) out.push({ ...o, change: 'reminder', lead, at: to }); // `at`: when it is sent, for the wording
+  }
+  return out;
+}
+
 /** Street keys an outage lists: [{ key, core, locality }], plus its municipality, all lower case. */
 export function streetsOf(o, munis) {
   const parsed = P.parseArea(o.area, munis);
@@ -198,6 +220,17 @@ function fmtWindow(off, on) {
 }
 const titleCase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 
+/**
+ * The day a start falls on, as of `now`: "Today", "Tomorrow" or "Coming up" by BC calendar day. No "in 50 min":
+ * a push can arrive late, and the start time that follows the label is what to go by.
+ */
+export function reminderLabel(start, now) {
+  const day = (ms) => dayFmt.format(new Date(ms));
+  if (day(start) === day(now)) return 'Today';
+  if (day(start) === day(now + 24 * HOUR)) return 'Tomorrow'; // BC has no clock changes since 2026
+  return 'Coming up';
+}
+
 /** One short line per changed outage, in plain words. Street-level only: the server never knows the house number. */
 export function describeChange(o) {
   const w = o.was || {};
@@ -218,6 +251,7 @@ export function describeChange(o) {
     return `Unplanned outage updated${crew}${n}`;
   }
   const when = fmtWindow(o.dateOff, o.dateOn);
+  if (o.change === 'reminder') return `${reminderLabel(o.dateOff, Number.isFinite(o.at) ? o.at : Date.now())}: planned outage ${when}`;
   if (o.change === 'removed') return `No longer listed: planned outage ${when}`;
   if (o.change === 'added') return `New planned outage: ${when}`;
   if (o.cancelled && !w.cancelled) return `Cancelled: planned outage ${when}`;

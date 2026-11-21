@@ -85,10 +85,10 @@ test('check-feeds run(): stores the first copy, then pushes only to touched stre
     blobs.set('sub/gone', L.normaliseSubscription(sub('https://p/gone', 'adams rd', '')));
     blobs.set('sub/elm', L.normaliseSubscription(sub('https://p/elm', 'elm st', '')));
     // The subscribers are new, so their outage now enters the copy; it is a change but not an alert.
-    assert.deepEqual(await C.run({ store, send, log }), { changed: 1, pushed: 0, dropped: 0 });
+    assert.deepEqual(await C.run({ store, send, log }), { changed: 1, reminders: 0, pushed: 0, dropped: 0 });
     assert.deepEqual(blobs.get('feeds/last').outages.map((x) => x.id), [1]);
     assert.deepEqual(blobs.get('feeds/last').cores, ['street:adams', 'street:elm']);
-    assert.deepEqual(await C.run({ store, send, log }), { changed: 0, pushed: 0 });
+    assert.deepEqual(await C.run({ store, send, log }), { changed: 0, reminders: 0, pushed: 0 });
     feeds.planned = planned([o(1, '1-9 Adams Rd', 'Bowen Island', { dateOff: 300, dateOn: 400 })]);
     const r = await C.run({ store, send, log });
     assert.deepEqual([r.changed, r.pushed, r.dropped], [1, 1, 1]);
@@ -167,4 +167,64 @@ test('describeChange calls started planned work planned, not unplanned', async (
   const L = await import('../netlify/functions/lib/feed-diff.mjs');
   assert.equal(L.describeChange({ kind: 'current', change: 'added', cause: 'Planned work being done on our equipment', crew: 'Crew on-site' }), 'Power off: planned work has started, crew on-site');
   assert.match(L.describeChange({ kind: 'current', change: 'added', cause: 'Tree down', customers: 3 }), /^Power out: unplanned outage/);
+});
+
+test('dueReminders: once at 24 hours and once at 1 hour before a planned outage starts', async () => {
+  const L = await import('../netlify/functions/lib/feed-diff.mjs');
+  const H = 3600e3, start = Date.UTC(2026, 11, 5, 17);
+  const list = L.slimFeed(planned([o(1, '1-9 Adams Rd', 'Bowen Island', { dateOff: start, dateOn: start + 4 * H }), o(2, 'CANCELLED 5 Elm St', 'Burnaby', { dateOff: start, dateOn: start + H })]), 'planned');
+  const at = (from, to) => L.dueReminders(list, from, to).map((r) => [r.id, r.lead]);
+  assert.deepEqual(at(start - 24 * H - 600e3, start - 24 * H), [[1, 24]], 'mark reached; cancelled skipped');
+  assert.deepEqual(at(start - 24 * H, start - 24 * H + 600e3), [], 'not again on the next run');
+  assert.deepEqual(at(start - 61 * 60e3, start - 55 * 60e3), [[1, 1]]);
+  assert.deepEqual(at(start - 30 * H, start - 30 * 60e3), [[1, 1]], 'a long gap sends only the nearer reminder');
+  assert.deepEqual(at(start - 10 * 60e3, start + 60e3), [], 'already started');
+  assert.match(L.describeChange({ ...list[0], change: 'reminder', lead: 1, at: start - H }), /^Today: planned outage /);
+  assert.match(L.describeChange({ ...list[0], change: 'reminder', lead: 24, at: start - 24 * H }), /^Tomorrow: planned outage /);
+  assert.equal(L.reminderLabel(start, start - 35 * 60e3), 'Today');
+  // start is 10 a.m. BC time: a 24-hour reminder sent after midnight says today, not tomorrow.
+  assert.equal(L.reminderLabel(start, start - 8 * H), 'Today');
+  assert.equal(L.reminderLabel(start, start - 20 * H), 'Tomorrow');
+  assert.equal(L.reminderLabel(start, start - 40 * H), 'Coming up');
+});
+
+test('check-feeds run(): pushes reminders to street subscribers, merged with any change, never to town-wide ones', async () => {
+  const C = await import('../netlify/functions/check-feeds.mjs');
+  const L = await import('../netlify/functions/lib/feed-diff.mjs');
+  const H = 3600e3, start = Date.UTC(2026, 11, 5, 17);
+  const feeds = { planned: planned([o(1, '1-9 Adams Rd', 'Bowen Island', { dateOff: start, dateOn: start + 4 * H })]), current: { regions: [] } };
+  const realFetch = global.fetch;
+  global.fetch = async (url) => ({ ok: true, json: async () => (url.includes('current') ? feeds.current : feeds.planned) });
+  const blobs = new Map();
+  const store = {
+    get: async (k) => (blobs.has(k) ? blobs.get(k) : null),
+    setJSON: async (k, v) => { blobs.set(k, JSON.parse(JSON.stringify(v))); },
+    delete: async (k) => { blobs.delete(k); },
+    list: async ({ prefix }) => ({ blobs: [...blobs.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })) }),
+  };
+  blobs.set('sub/a', L.normaliseSubscription(sub('https://p/a', 'adams rd', 'Bowen Island')));
+  blobs.set('sub/town', L.normaliseSubscription({ ...sub('https://p/town', '', 'Bowen Island'), topics: ['muni'] }));
+  const sent = [];
+  const send = async (s, payload) => { sent.push([s.endpoint, JSON.parse(payload)]); };
+  const log = () => {};
+  try {
+    await C.run({ store, send, log, now: start - 30 * H });
+    await C.run({ store, send, log, now: start - 24 * H - 300e3 });
+    assert.equal(sent.length, 0);
+    const r = await C.run({ store, send, log, now: start - 24 * H + 300e3 });
+    assert.deepEqual([r.changed, r.reminders, r.pushed], [0, 1, 1]);
+    assert.deepEqual(sent.map(([e]) => e), ['https://p/a']);
+    assert.equal(sent[0][1].title, 'Adams Rd, Bowen Island');
+    assert.match(sent[0][1].body, /^Tomorrow: planned outage /);
+    sent.length = 0;
+    await C.run({ store, send, log, now: start - 23 * H });
+    assert.equal(sent.length, 0, 'no repeat');
+    // A time change in the same run as the 1-hour mark: one push with both lines.
+    feeds.planned = planned([o(1, '1-9 Adams Rd', 'Bowen Island', { dateOff: start, dateOn: start + 5 * H })]);
+    await C.run({ store, send, log, now: start - 55 * 60e3 });
+    const a = sent.filter(([e]) => e === 'https://p/a');
+    assert.equal(a.length, 1);
+    assert.match(a[0][1].body, /^Time changed: .*\nToday: planned outage /);
+    assert.ok(!/Today: planned/.test((sent.find(([e]) => e === 'https://p/town') || [null, { body: '' }])[1].body), 'town subscriber gets the change, not the reminder');
+  } finally { global.fetch = realFetch; }
 });
