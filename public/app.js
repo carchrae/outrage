@@ -11,7 +11,7 @@
   const $ = (sel) => document.querySelector(sel);
   const els = {
     header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
-    freshness: $('#freshness'), status: $('#status'), results: $('#results'), dataTimes: $('#data-times'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), sheet: $('#outage-dialog'), locate: $('#locate'),
+    freshness: $('#freshness'), status: $('#status'), results: $('#results'), dataTimes: $('#data-times'), home: $('#home'), here: $('#here'), install: $('#install'), dialog: $('#dialog'), sheet: $('#outage-dialog'), locate: $('#locate'), mapOpen: $('#map-open'),
   };
 
   const HOME_KEY = 'outage-finder.home';
@@ -80,6 +80,7 @@
         A.sync(state.home, state.munis).then((changed) => { if (changed) render(); });
         maybeOfferAlerts(A.standalone() ? `Turn on alerts for ${homeLabel()} so this app can tell you when something changes.` : alertsIntro());
       }
+      if (!state.error) locateOnOpen();
     }
   }
 
@@ -96,6 +97,7 @@
         state.currentError = current.status === 'fulfilled' ? '' : String(current.reason && current.reason.message || current.reason);
         ingest(planned.value, current.status === 'fulfilled' ? current.value : null);
         loadedAt = Date.now(); state.error = ''; checkFailed = false;
+        if (geoAllowed) findMe().then((p) => { myPlace = p; render(); }).catch(() => {});
       } catch (e) { /* keep what is shown */ } finally { render(); }
     })().finally(() => { loading = null; });
     return loading;
@@ -688,14 +690,14 @@
    */
   function muniNowSection(matches, muni, now) {
     const mine = matches.strong.filter((i) => i.o.kind === 'current');
-    const near = mine.concat(matches.nearby.filter((i) => i.o.kind === 'current'));
+    const near = hereFirst(mine.concat(matches.nearby.filter((i) => i.o.kind === 'current')));
     if (!near.length) return '';
     const rows = near.map(({ o }) => {
       const where = o.parsed.segments.length ? o.parsed.segments.map((s) => s.label).join(', ') : o.parsed.text;
       const bits = [o.plannedWork ? 'Planned work' : 'Unplanned', o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`];
       if (o.numCustomersOut != null) bits.push(`${fmtNum(o.numCustomersOut)} customer${o.numCustomersOut === 1 ? '' : 's'}`);
       if (o.dateOn) bits.push(backEstimateText(o.dateOn, now));
-      const chip = mine.some((i) => i.o === o) ? '<span class="badge danger">Your street</span> ' : '';
+      const chip = (hereIds().has(o.id) ? '<span class="badge danger">Your location</span> ' : '') + (mine.some((i) => i.o === o) ? '<span class="badge danger">Your street</span> ' : '');
       return `<li><div><span class="where">${chip}${esc(where)}</span><span class="sub">${esc(bits.join(' · '))}</span></div>${detailsBtn(o.id)}</li>`;
     });
     const where = muni || matches.q.muni;
@@ -727,7 +729,7 @@
       return;
     }
     const addr = `<span class="addr">${esc(state.home.address)}${state.home.muni ? ` <span class="muni"><span class="sep">· </span>${esc(state.home.muni)}</span>` : ''}</span>`;
-    const savedBar = `<p class="home-actions"><span class="muted">Saved address:</span> ${addr} <a href="#" id="home-show">Show</a> <a href="#" id="home-forget">Clear my address and history</a></p>`;
+    const savedBar = `<p class="home-actions"><span class="muted">Saved address:</span> ${addr} <a href="#" id="home-show">Show</a> <a href="#" id="home-map">Outage map</a> <a href="#" id="home-forget">Clear my address and history</a></p>`;
     if (!queryIsHome()) {
       if (!state.query || !queryIsAddress()) { setHTML(els.home, `<div class="home-card compact">${savedBar}</div>`); return; }
       const other = homeMatches(now, state.query, state.muni);
@@ -752,7 +754,7 @@
     const install = button ? `<span class="install">${button}</span>` : '';
     setHTML(els.home, `<div class="home-card">
   <div class="title-row"><div><h2 class="home-title ${headline.cls}">${headline.text}</h2><p class="home-subtitle">${addr}</p></div>${install}</div>
-  <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-forget">Clear my address and history</a></p>
+  <p class="home-actions"><a href="#" id="home-search">Search another address</a> <a href="#" id="home-map">Am I in an outage? (map)</a> <a href="#" id="home-forget">Clear my address and history</a></p>
   ${liveStatus(matches, now)}
   <p class="home-summary">${summary}</p>
   ${upcomingList(matches, now)}
@@ -804,8 +806,9 @@ ${homeOthers(now)}`);
     if (els.form.hidden !== hideForm) els.form.hidden = hideForm;
     if (els.header.hidden !== hideForm) els.header.hidden = hideForm;
     renderStatus();
-    if (state.error || state.loading) { setHTML(els.results, ''); setHTML(els.home, ''); return; }
+    if (state.error || state.loading) { setHTML(els.results, ''); setHTML(els.home, ''); setHTML(els.here, ''); return; }
     const now = Date.now();
+    renderHere(now);
     let home = null;
     if (state.home) { home = homeMatches(now); updateHomeSnapshot(home, now); }
     renderHome(home, now);
@@ -822,7 +825,7 @@ ${homeOthers(now)}`);
     if (r.current && r.current.length) {
       const label = r.currentLabel ? ` in ${esc(r.currentLabel)}` : '';
       parts.push(`<p class="group-head">Happening now${label}</p>`);
-      parts.push(...r.current.map((i) => card(i, r.q, now, tags[i.o.id])));
+      parts.push(...hereFirst(r.current).map((i) => card(i, r.q, now, tags[i.o.id])));
       if (hasPlanned) parts.push(`<p class="group-head">Planned</p>`);
     } else if (state.currentError) {
       parts.push(`<p class="hint">Unplanned outages could not be loaded (${esc(state.currentError)}).</p>`);
@@ -1155,6 +1158,8 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     const m = item.match;
     const badges = [];
     if (changeTag) badges.push(`<span class="badge new">${esc(changeTag)}</span>`);
+    const here = hereIds().get(o.id);
+    if (here) badges.push(`<span class="badge danger">${here === 'inside' ? 'At your location' : 'Near your location'}</span>`);
     badges.push(o.plannedWork ? '<span class="badge warn">Planned work in progress</span>' : '<span class="badge danger">Unplanned outage</span>');
     if (m && m.streetScore >= 2 && !m.segment.boundary) badges.push(`<span class="badge hit">${m.numberListed === true ? 'Your address is in the affected block' : 'Your street is affected'}</span>`);
     else if (m && m.segment.boundary) badges.push('<span class="badge muted">Your street bounds the affected area</span>');
@@ -1424,6 +1429,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   // Offered only when the deploy can turn a location into an address; the municipality guess alone is not worth a button.
   if ('geolocation' in navigator && HAS_GEOCODER) els.locate.hidden = false;
   els.locate.addEventListener('click', () => locate());
+  els.mapOpen.addEventListener('click', () => openMap());
   els.clear.addEventListener('click', () => { state.query = ''; state.muni = DEFAULT_MUNI; els.q.value = ''; els.muni.value = state.muni; writeState(); render(); els.q.focus(); });
   /** Clicks on outage cards' Details buttons, in both the results and the address panel. */
   function cardClick(e) {
@@ -1454,6 +1460,199 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     openSheet('Outage details', `<div class="results">${card(item, q, now, tag)}</div>`);
   }
 
+  // ------------------------------------------------------------ outage map
+
+  /*
+   * "Am I in an outage?": a map of the outages BC Hydro reports right now, drawn from the areas in the unplanned feed,
+   * with the visitor's location. Location is asked for only when this is opened, and is used only in this page: the
+   * check against the outage areas runs here and the position is not stored or sent anywhere. The map tiles come from
+   * OpenStreetMap, which therefore sees which area is being looked at. Leaflet is loaded the first time it is needed.
+   * Planned outages have no area in the feed, so only unplanned outages and planned work under way are on the map.
+   */
+  const LEAFLET = 'https://unpkg.com/leaflet@1.9.4/dist/';
+  let leafletReady = null;
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve(window.L);
+    if (!leafletReady) {
+      leafletReady = new Promise((resolve, reject) => {
+        const css = document.createElement('link');
+        css.rel = 'stylesheet'; css.href = LEAFLET + 'leaflet.css';
+        css.integrity = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='; css.crossOrigin = '';
+        document.head.appendChild(css);
+        const js = document.createElement('script');
+        js.src = LEAFLET + 'leaflet.js';
+        js.integrity = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='; js.crossOrigin = '';
+        js.onload = () => resolve(window.L);
+        js.onerror = () => { leafletReady = null; reject(new Error('map library did not load')); };
+        document.head.appendChild(js);
+      });
+    }
+    return leafletReady;
+  }
+
+  // The last position found while the map was open: kept in memory only, so Back from an outage's details does not
+  // ask again. Older than 5 minutes, it is asked for again.
+  let myPlace = null;
+  const OUT_COLOR = '#d9480f', WORK_COLOR = '#c98a00';
+
+  function openMap() {
+    const body = `<p class="map-result" id="map-result" aria-live="polite">${myPlace ? '' : 'Finding your location…'}</p>
+<div id="outage-map" class="outage-map" role="region" aria-label="Map of current outages"></div>
+<p class="map-legend"><span class="key" style="--c:${OUT_COLOR}"></span>Unplanned outage <span class="key" style="--c:${WORK_COLOR}"></span>Planned work under way <span class="key me"></span>You</p>
+<p class="hint">Your location is checked against BC Hydro's outage areas on this device only; it is not saved or sent anywhere. The map pictures come from OpenStreetMap. Planned outages that have not started have no map area: search your address to check those.</p>`;
+    openSheet('Am I in an outage?', body, { onShow: showMap });
+  }
+
+  async function showMap() {
+    const box = els.sheet.querySelector('#outage-map');
+    if (!box) return;
+    const place = myPlace && Date.now() - myPlace.at < 5 * 60e3 ? Promise.resolve(myPlace) : findMe();
+    let L = null;
+    try { L = await loadLeaflet(); } catch (e) { box.classList.add('failed'); box.textContent = 'The map could not be loaded (offline?). The check below still works.'; }
+    let map = null;
+    if (L && box.isConnected) {
+      map = L.map(box, { zoomControl: true, attributionControl: true });
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" rel="noopener" target="_blank">OpenStreetMap</a>' }).addTo(map);
+      const areas = new Map(); // outage id -> its drawn area
+      for (const o of state.current) {
+        if (!o.polygon || o.polygon.length < 6) continue;
+        const pts = [];
+        for (let i = 0; i + 1 < o.polygon.length; i += 2) pts.push([o.polygon[i + 1], o.polygon[i]]);
+        const c = o.plannedWork ? WORK_COLOR : OUT_COLOR;
+        const poly = L.polygon(pts, { color: c, weight: 2, fillColor: c, fillOpacity: 0.3 }).addTo(map);
+        poly.bindPopup(mapPopup(o, Date.now()));
+        areas.set(o.id, poly);
+        // A dot at BC Hydro's point for the outage, so small areas still show when zoomed out.
+        if (Number.isFinite(o.latitude) && Number.isFinite(o.longitude) && (o.latitude || o.longitude)) {
+          L.circleMarker([o.latitude, o.longitude], { radius: 5, color: '#fff', weight: 1.5, fillColor: c, fillOpacity: 1 }).addTo(map).bindPopup(mapPopup(o, Date.now()));
+        }
+      }
+      map.on('popupopen', (e) => {
+        const b = e.popup.getElement().querySelector('[data-details]');
+        if (b) b.addEventListener('click', () => showDetails(b.dataset.details));
+      });
+      // Until the location is known: the saved address's municipality's outages if it has any, else every outage.
+      const homeMuni = state.home && state.home.muni ? state.home.muni.toLowerCase() : '';
+      const local = homeMuni ? state.current.filter((o) => areas.has(o.id) && String(o.municipality || '').toLowerCase().includes(homeMuni)) : [];
+      const start = (local.length ? local.map((o) => areas.get(o.id)) : [...areas.values()]);
+      if (start.length) map.fitBounds(L.featureGroup(start).getBounds(), { padding: [12, 12], maxZoom: 15 });
+      else map.setView([53.7, -124.5], 5);
+      box._map = map; box._areas = areas;
+    }
+    let me;
+    try { me = await place; } catch (err) { setMapResult(placeError(err)); return; }
+    myPlace = me; geoAllowed = true;
+    render(); // the lists and the "where you are" box follow the location
+    if (!box.isConnected) return;
+    const hits = M.outagesAt(state.current, me.lat, me.lon, me.acc);
+    setMapResult(mapVerdict(hits, me, Date.now()));
+    if (map) {
+      L.circle([me.lat, me.lon], { radius: me.acc, color: '#1c64d6', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map);
+      L.circleMarker([me.lat, me.lon], { radius: 7, color: '#fff', weight: 2, fillColor: '#1c64d6', fillOpacity: 1 }).addTo(map).bindTooltip('You');
+      const mine = hits.map((h) => box._areas.get(h.o.id)).filter(Boolean);
+      if (mine.length) map.fitBounds(L.featureGroup(mine).getBounds().extend([me.lat, me.lon]), { padding: [16, 16], maxZoom: 16 });
+      else map.setView([me.lat, me.lon], me.acc > 2000 ? 11 : 14);
+    }
+  }
+
+  /*
+   * Location on opening the page. Already allowed (the browser says so without asking): find the device, so the
+   * "where you are" box and the lists show any outage at it; the map stays closed until asked for. Not yet decided, and BC Hydro reports outages: offer the
+   * check once per device, with the browser's own prompt coming only after "Check my location". Refused: nothing.
+   * Never on top of another dialog (the alerts offer); then it waits for the next visit.
+   */
+  const LOC_ASKED_KEY = 'outage-finder.location-offered';
+  let geoAllowed = false;
+  let locatedOnOpen = false;
+  async function geoPermission() {
+    try { return (await navigator.permissions.query({ name: 'geolocation' })).state; } catch (e) { return 'unknown'; }
+  }
+  async function locateOnOpen() {
+    if (locatedOnOpen || !('geolocation' in navigator)) return;
+    locatedOnOpen = true;
+    const perm = await geoPermission();
+    if (perm === 'granted') {
+      geoAllowed = true;
+      try { myPlace = await findMe(); } catch (e) { return; }
+      render(); // the "where you are" box and the lists; the map opens only from its button
+      return;
+    }
+    if (perm === 'denied' || !state.current.length || els.dialog.open || sheetPages.length) return;
+    let asked = false;
+    try { asked = !!localStorage.getItem(LOC_ASKED_KEY); } catch (e) { /* ignore */ }
+    if (asked) return;
+    try { localStorage.setItem(LOC_ASKED_KEY, '1'); } catch (e) { /* ignore */ }
+    const n = state.current.length;
+    openDialog(`<h3>Are you in an outage?</h3><p>BC Hydro is reporting ${n} outage${n === 1 ? '' : 's'} in BC right now. Your device's location can show whether you are in one of them.</p><p class="hint">Your location is checked on this device only; it is not saved or sent anywhere. You can also do this later with “Am I in an outage? (map)”.</p><div class="actions"><button type="button" class="btn link small" id="dialog-close">Not now</button> <button type="button" class="btn small primary" id="loc-yes">Check my location</button></div>`);
+  }
+
+  /** Outages at the device's last known location: id -> 'inside' | 'near'. Empty without a location. */
+  function hereIds() {
+    const m = new Map();
+    if (myPlace) for (const h of M.outagesAt(state.current, myPlace.lat, myPlace.lon, myPlace.acc)) m.set(h.o.id, h.where);
+    return m;
+  }
+  /** A list of outage items with the ones at the device's location first, otherwise in the same order. */
+  function hereFirst(items) {
+    const here = hereIds();
+    if (!here.size) return items;
+    const rank = (i) => (here.get(i.o.id) === 'inside' ? 0 : here.has(i.o.id) ? 1 : 2);
+    return items.map((i, n) => [i, n]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([i]) => i);
+  }
+  /** The box at the top of the page when the device is inside or near an outage area. */
+  function renderHere(now) {
+    const here = hereIds();
+    if (!here.size) { setHTML(els.here, ''); return; }
+    const hits = state.current.filter((o) => here.has(o.id)).sort((a, b) => (here.get(a.id) === 'inside' ? 0 : 1) - (here.get(b.id) === 'inside' ? 0 : 1));
+    const inside = hits.filter((o) => here.get(o.id) === 'inside');
+    const head = inside.length
+      ? (inside.every((o) => o.plannedWork) ? 'Planned work under way where you are' : 'Power outage where you are')
+      : 'An outage area reaches close to where you are';
+    const rows = hits.map((o) => `<li><span>${esc(mapLine(o, now))}</span>${detailsBtn(o.id)}</li>`).join('');
+    setHTML(els.here, `<div class="live${inside.length && !inside.every((o) => o.plannedWork) ? '' : ' planned'}"><div class="live-top"><div class="live-head">${head}</div><button type="button" class="btn small" id="here-map">Map</button></div><ul class="map-hits">${rows}</ul><p class="hint">From this device's location${myPlace.acc ? `, accurate to about ${myPlace.acc >= 1000 ? (myPlace.acc / 1000).toFixed(1) + ' km' : myPlace.acc + ' m'}` : ''}. BC Hydro's area can be wider than the homes actually out.</p></div>`);
+  }
+  els.here.addEventListener('click', (e) => {
+    if (cardClick(e)) return;
+    if (e.target.closest('#here-map')) openMap();
+  });
+
+  function findMe() {
+    return new Promise((resolve, reject) => {
+      if (!('geolocation' in navigator)) { reject({ code: -1 }); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, acc: Math.round(pos.coords.accuracy || 0), at: Date.now() }),
+        reject, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60e3 });
+    });
+  }
+  function placeError(err) {
+    const code = err && err.code;
+    if (code === 1) return '<b>Location permission was refused.</b> The map still shows the current outages; allow location for this site in your browser settings to check where you are.';
+    if (code === -1) return '<b>This browser cannot share your location.</b> The map still shows the current outages.';
+    return '<b>Your location could not be found</b> (no signal, or it took too long). The map still shows the current outages.';
+  }
+  function setMapResult(html) { const el = els.sheet.querySelector('#map-result'); if (el) el.innerHTML = html; }
+
+  function mapLine(o, now) {
+    const bits = [o.plannedWork ? 'Planned work' : 'Unplanned outage', o.crewStatusDescr || 'No crew information', `out ${fmtDuration(now - o.dateOff)}`];
+    if (o.numCustomersOut != null) bits.push(`${fmtNum(o.numCustomersOut)} customer${o.numCustomersOut === 1 ? '' : 's'}`);
+    if (o.dateOn) bits.push(backEstimateText(o.dateOn, now));
+    return bits.join(' · ');
+  }
+  function mapPopup(o, now) {
+    return `<div class="map-pop"><b>${esc(o.municipality)}</b><br>${esc(mapLine(o, now))}<br>${detailsBtn(o.id)}</div>`;
+  }
+  function mapVerdict(hits, me, now) {
+    const rough = me.acc > 500 ? ` Your device places you only within about ${me.acc >= 1000 ? (me.acc / 1000).toFixed(1) + ' km' : me.acc + ' m'}, so this is a rough check.` : '';
+    const inside = hits.filter((h) => h.where === 'inside'), near = hits.filter((h) => h.where === 'near');
+    const list = (hs) => `<ul class="map-hits">${hs.map(({ o }) => `<li><span>${esc(mapLine(o, now))}</span>${detailsBtn(o.id)}</li>`).join('')}</ul>`;
+    if (inside.length) {
+      const work = inside.every((h) => h.o.plannedWork);
+      return `<span class="verdict out"><b>You are inside ${work ? 'an area with planned work under way' : 'an outage area'}.</b></span>${rough}${list(inside)}`;
+    }
+    if (near.length) return `<span class="verdict near"><b>You are close to the edge of an outage area.</b></span> It may or may not include you.${rough}${list(near)}`;
+    return `<span class="verdict clear"><b>You are not inside any outage area BC Hydro reports right now.</b></span>${rough}`;
+  }
+
   /*
    * The dialog (full screen on phones) holds a stack of pages, e.g. Changes, then one outage's details from it.
    * Each page has a history entry, so back (button, key or gesture) returns to the previous page and finally
@@ -1462,18 +1661,19 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
   const sheetPages = [];
   let sheetClosingAll = false;
   function drawSheet() {
-    const { title, body } = sheetPages[sheetPages.length - 1];
+    const { title, body, onShow } = sheetPages[sheetPages.length - 1];
     els.sheet.setAttribute('aria-label', title);
     const back = sheetPages.length > 1 ? `<button type="button" class="btn small" id="sheet-back">Back</button>` : '';
     els.sheet.innerHTML = `<div class="sheet-bar"><span class="sheet-left">${back}</span><strong>${esc(title)}</strong><span class="sheet-right"><button type="button" class="btn small" id="sheet-close">Close</button></span></div>
 <div class="sheet-body wrap">${body}</div>`;
     els.sheet.scrollTop = 0;
     if (window.OutageColumns) window.OutageColumns.fitAll(els.sheet);
+    if (onShow) onShow(); // e.g. the map, which lives in the page's HTML and is rebuilt each time it is shown
   }
   /** Open the dialog on a page, or add a page to it; `replace` redraws the current page instead (after an edit). */
-  function openSheet(title, body, { replace = false } = {}) {
-    if (replace && sheetPages.length) { sheetPages[sheetPages.length - 1] = { title, body }; drawSheet(); return; }
-    sheetPages.push({ title, body });
+  function openSheet(title, body, { replace = false, onShow = null } = {}) {
+    if (replace && sheetPages.length) { sheetPages[sheetPages.length - 1] = { title, body, onShow }; drawSheet(); return; }
+    sheetPages.push({ title, body, onShow });
     try { history.pushState({ outageSheet: sheetPages.length }, ''); } catch (e) { /* ignore */ }
     if (!els.sheet.hasAttribute('open')) {
       if (typeof els.sheet.showModal === 'function') els.sheet.showModal(); else els.sheet.setAttribute('open', '');
@@ -1531,6 +1731,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
       render();
     }
     else if (id === 'changes-open') openChanges();
+    else if (id === 'home-map') { e.preventDefault(); openMap(); }
     else if (id === 'home-more') {
       state.showMore = !state.showMore; render();
       if (state.showMore) els.results.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1564,6 +1765,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
     const pick = e.target.closest('[data-save-muni]');
     if (pick) { saveWithMuni(pick.dataset.saveMuni); return; }
     if (id === 'dialog-close') closeDialog();
+    else if (id === 'loc-yes') { closeDialog(); openMap(); }
     else if (id === 'dialog-save-anyway') { closeDialog(); saveHome(state.query, ''); }
     else if (id === 'dialog-muni-save') {
       const text = els.dialog.querySelector('#dialog-muni').value.trim();

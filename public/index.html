@@ -55,9 +55,11 @@
         <label class="check"><input type="checkbox" id="past"> Include finished outages</label>
         <button type="button" id="clear" class="btn link">Clear</button>
         <button type="button" id="locate" class="btn link" hidden>Use my location</button>
+        <button type="button" id="map-open" class="btn link">Am I in an outage? (map)</button>
       </div>
     </form>
 
+    <section id="here" class="here" aria-live="polite"></section>
     <section id="home" class="home" aria-live="polite"></section>
     <section id="status" class="status" aria-live="polite"></section>
     <section id="results" class="results"></section>

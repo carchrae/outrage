@@ -34,8 +34,8 @@ The site itself is plain HTML, CSS and JavaScript in `public/` with no build ste
 
 ## Use my location
 
-Location is only ever read when the visitor presses "Use my location" under the form; the page never
-asks on its own, and the button is only shown when the deploy has a geocoder key. The nearest municipality is picked from `public/munis.json` (centroids for every
+Location is only ever read when the visitor presses "Use my location" under the form or opens the
+outage map (see below); the page never asks on its own, and the button is only shown when the deploy has a geocoder key. The nearest municipality is picked from `public/munis.json` (centroids for every
 name the feeds use, built by `npm run geocode` from OpenStreetMap's Nominatim; nothing is looked up
 at runtime for that step). When the deploy has a `BC_GEOCODER_KEY` (a free key from the BC
 government's API Services Portal, https://api.gov.bc.ca/devportal/api-directory, "Address
@@ -43,6 +43,31 @@ Geocoder"), the coordinates are also sent to `netlify/functions/locate.mjs`, whi
 Address Geocoder for the nearest civic address and fills the form for the visitor to check and
 save. Without the key the build leaves the `geocoder` meta tag empty and the page never calls it.
 A saved address is never changed by either step.
+
+## Am I in an outage? (map)
+
+"Am I in an outage? (map)", under the form and in the saved-address panel, opens a dialog with a map of
+the outages BC Hydro reports right now and asks for the device's location. BC Hydro's unplanned feed gives
+every outage an area (`polygon`, a flat `[lon, lat, ...]` ring); `outagesAt` in `public/matcher.js` tests the
+location against them on the device and says whether it is inside one, near the edge of one (within the
+device's stated accuracy, capped at 1 km), or in none. The position is kept in memory for five minutes so
+Back from an outage's details does not ask again; it is never stored or sent. Planned outages that have not
+started have no area in the feed, so they are not on the map.
+
+On opening the page, the browser is asked (without prompting) whether location is already allowed:
+
+- Allowed: the device is located without opening anything. When it is inside or near an outage area, a box at
+  the top of the page, "Power outage where you are", lists those outages, and they are listed first, marked
+  "At your location", in the outage lists. The location is checked again whenever the feeds are refreshed.
+- Not decided, and BC Hydro reports any outages: a dialog offers the check once per device
+  (`outage-finder.location-offered` in localStorage); the browser's own prompt only comes after "Check my
+  location". It waits for a later visit if another dialog (the alerts offer) is already open.
+- Refused: nothing is asked or shown.
+
+The map uses Leaflet 1.9.4 from unpkg (with subresource integrity), loaded the first time the dialog opens,
+and OpenStreetMap's tiles, so OpenStreetMap sees which area is being viewed. Areas are filled orange-red for
+unplanned outages and amber for planned work under way, with a dot at BC Hydro's point for each so small
+areas show when zoomed out.
 
 ## Browser storage
 
@@ -54,6 +79,7 @@ when alerts are turned on, the street name and municipality (see "Push alerts").
 | `outage-finder.home` | saved address and municipality |
 | `outage-finder.snapshot` | matches seen on the last visit, used to detect changes |
 | `outage-finder.history` | every outage ever matched for the saved address (capped at 300) |
+| `outage-finder.location-offered` | set once the location check has been offered |
 | `outage-finder.alerts` | street, municipality, topics and push endpoint registered for alerts |
 
 

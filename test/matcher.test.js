@@ -80,3 +80,17 @@ test('collectMunis: an outage spanning municipalities adds each one, not the joi
   const cur = { regions: [{ id: 1, name: 'R', municipalities: [], outages: [{ id: 1, municipality: 'Delta, Richmond', municipalities: ['Delta', 'Richmond'] }, { id: 2, municipality: 'Coquitlam, Port Moody' }] }] };
   assert.deepEqual(M.collectMunis(null, cur), ['Coquitlam', 'Delta', 'Port Moody', 'Richmond']);
 });
+
+test('insidePolygon and outagesAt: inside, near the edge within the accuracy, or not at all', () => {
+  // A square about 1.1 km a side near Snug Cove, as BC Hydro sends it: flat [lon, lat, ...].
+  const sq = [-123.34, 49.38, -123.325, 49.38, -123.325, 49.39, -123.34, 49.39, -123.34, 49.38];
+  assert.equal(M.insidePolygon(sq, -123.33, 49.385), true);
+  assert.equal(M.insidePolygon(sq, -123.30, 49.385), false);
+  assert.equal(M.insidePolygon([], -123.33, 49.385), false);
+  const outages = [{ id: 1, polygon: sq }, { id: 2, polygon: [] }, { id: 3 }];
+  assert.deepEqual(M.outagesAt(outages, 49.385, -123.33, 20).map((x) => [x.o.id, x.where]), [[1, 'inside']]);
+  // 0.003 degrees of longitude east of the edge is about 220 m: near with a 300 m accuracy, not with 50 m.
+  assert.deepEqual(M.outagesAt(outages, 49.385, -123.322, 300).map((x) => [x.o.id, x.where]), [[1, 'near']]);
+  assert.deepEqual(M.outagesAt(outages, 49.385, -123.322, 50), []);
+  assert.deepEqual(M.outagesAt(outages, 49.385, -123.20, 50000), [], 'accuracy is capped at 1 km');
+});

@@ -144,6 +144,7 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .tz-warning .tz-times { display: block; margin-top: 2px; }
 .freshness { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 8px 0; padding: 8px 10px; background: var(--warn-bg); color: var(--text); border: 1px solid var(--border); border-left: 4px solid var(--warn); border-radius: 6px; font-size: 0.9rem; }
 .freshness .btn { margin-left: auto; }
+.freshness[hidden] { display: none; } /* display: flex above would otherwise override the hidden attribute */
 .tz-dismiss { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 1.2rem; line-height: 1; cursor: pointer; }
 .tz-dismiss:hover { background: rgba(0, 0, 0, 0.06); color: var(--text); }
 .site-footer p.report { margin-bottom: 6px; color: var(--text); }
@@ -305,3 +306,25 @@ html:has(.sheet[open]) { overflow: hidden; }
 .home-alerts .alerts-msg { color: var(--warn); }
 .changelog-controls { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); }
 .changelog-controls label { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Outage map dialog */
+.outage-map { height: min(60vh, 520px); min-height: 280px; margin: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); isolation: isolate; background: var(--soft); }
+.outage-map.failed { display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; color: var(--muted); }
+.map-result { margin: 12px 12px 4px; }
+.map-result .verdict { display: inline; }
+.map-result .verdict.out b { color: var(--danger); }
+.map-result .verdict.near b { color: var(--warn); }
+.map-result .verdict.clear b { color: var(--hit); }
+.map-hits { list-style: none; margin: 8px 0 0; padding: 0; }
+.map-hits li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); font-size: 0.9rem; }
+.map-hits li span { flex: 1; }
+.map-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0 12px; font-size: 0.85rem; color: var(--muted); }
+.map-legend .key { display: inline-block; width: 14px; height: 14px; margin-left: 8px; border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 35%, transparent); border-radius: 3px; }
+.map-legend .key:first-child { margin-left: 0; }
+.map-legend .key.me { --c: #1c64d6; border-radius: 50%; background: #1c64d6; border-color: #fff; box-shadow: 0 0 0 1px #1c64d6; }
+.sheet-body > .hint { margin: 8px 12px 0; }
+.map-pop .details-btn { margin-top: 6px; }
+.here:empty { display: none; }
+.here { margin: 8px 0; }
+.here .map-hits { margin: 6px 0 0; }
+.here .hint { margin: 6px 0 0; }

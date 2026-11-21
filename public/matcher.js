@@ -193,5 +193,43 @@
     return d.added.length + d.rescheduled.length + d.cancelled.length + d.updated.length + d.finished.length + d.removed.length;
   }
 
-  return { collectMunis, ingestFeeds, isPlannedWork, longFinished, endedToday, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
+  // ------------------------------------------------------------ outage areas (unplanned feed)
+
+  /**
+   * Is a point inside an outage's area? BC Hydro's unplanned outages carry `polygon`, a flat list of
+   * [lon, lat, lon, lat, ...] forming one ring. Ray casting; a point exactly on an edge may go either way.
+   */
+  function insidePolygon(flat, lon, lat) {
+    if (!Array.isArray(flat) || flat.length < 6) return false;
+    let inside = false;
+    for (let i = 0, j = flat.length - 2; i < flat.length; j = i, i += 2) {
+      const xi = flat[i], yi = flat[i + 1], xj = flat[j], yj = flat[j + 1];
+      if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  /**
+   * Outages whose area holds a location: `inside` when the point itself is in it, otherwise `near` when part of the
+   * circle the device is unsure within (its accuracy, capped at 1 km) reaches into it.
+   * @param {object[]} outages from ingestFeeds().current
+   * @returns {Array<{o:object, where:'inside'|'near'}>}
+   */
+  function outagesAt(outages, lat, lon, accuracyM = 0) {
+    const r = Math.min(Math.max(accuracyM || 0, 0), 1000);
+    const ring = [];
+    if (r > 0) {
+      const dLat = r / 111320, dLon = r / (111320 * Math.cos((lat * Math.PI) / 180));
+      for (let k = 0; k < 16; k++) { const a = (k / 16) * 2 * Math.PI; ring.push([lon + dLon * Math.cos(a), lat + dLat * Math.sin(a)]); }
+    }
+    const out = [];
+    for (const o of outages || []) {
+      if (!o.polygon || !o.polygon.length) continue;
+      if (insidePolygon(o.polygon, lon, lat)) out.push({ o, where: 'inside' });
+      else if (ring.some(([x, y]) => insidePolygon(o.polygon, x, y))) out.push({ o, where: 'near' });
+    }
+    return out.sort((a, b) => (a.where === 'inside' ? 0 : 1) - (b.where === 'inside' ? 0 : 1));
+  }
+
+  return { collectMunis, ingestFeeds, insidePolygon, outagesAt, isPlannedWork, longFinished, endedToday, statusOf, resolveMunis, homeMatches, snapshotOf, computeDiff, countChanges, rescheduledFrom, bcFormat, tzOutdated };
 });
