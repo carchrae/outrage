@@ -186,7 +186,7 @@
     for (const chunk of chunks) {
       let pending = [];
       let lastSegsInChunk = [];
-      const tokens = chunk.split(',').map((rawTok) => cleanToken(rawTok.replace(/\u0001/g, ',').replace(/\u0002/g, ';')));
+      const tokens = chunk.split(',').flatMap((t) => splitSentences(t, muniSet)).map((rawTok) => cleanToken(rawTok.replace(/\u0001/g, ',').replace(/\u0002/g, ';')));
       let lastTokenIdx = -1;
       tokens.forEach((t, i) => { if (t) lastTokenIdx = i; });
       for (let ti = 0; ti < tokens.length; ti++) {
@@ -312,6 +312,35 @@
     seg.key = streetKey(seg.street);
     seg.core = coreKey(seg.key);
     seg.label = formatSegment(seg.street, seg.numbers);
+  }
+
+  /**
+   * A full stop can end one entry and start the next: "115-200 Metlakatla Rd. Prince Rupert." or
+   * "966 Huckleberry Ln. Bowen Island. 1712 Woods Rd". Split there when the word before the stop is a street
+   * suffix following a name (not a house number, so "3103 - 3158 St. George St" keeps its Saint), or when the
+   * text before it is, or ends in, a municipality ("328 Grizzly Ave Bear Lake. Prince George. 31205 Hart Hwy").
+   */
+  function splitSentences(raw, muniSet) {
+    const out = [];
+    let start = 0;
+    const re = /\.\s+/g;
+    let m;
+    while ((m = re.exec(raw))) {
+      const left = raw.slice(start, m.index).trim();
+      const words = left.split(/\s+/);
+      const last = streetKey(words[words.length - 1] || '');
+      const prev = words[words.length - 2] || '';
+      const afterName = words.length >= 2 && !/^[a-z]?\d[\d\s\-–]*[a-z]?$/i.test(prev);
+      const lower = left.toLowerCase();
+      const endsInMuni = muniSet.has(lower) || [...muniSet].some((mu) => lower.endsWith(' ' + mu));
+      if ((SUFFIXES.has(last) && last.length > 1 && afterName) || endsInMuni) {
+        out.push(left);
+        start = m.index + m[0].length;
+      }
+    }
+    out.push(raw.slice(start));
+    // "4029 Mcgill St. - 3976, 3986 Trinity St": the dash only joined the two lists.
+    return out.map((t, i) => (i ? t.replace(/^\s*[-–]\s*/, '') : t));
   }
 
   function hasSuffix(tok) {

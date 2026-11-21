@@ -210,3 +210,18 @@ test('safety net catches a street list the parser kept as a note', () => {
   assert.ok(P.matchOutage(P.parseQuery('1400 Adams Rd', []), p).mention);
   assert.ok(P.matchOutage(P.parseQuery('Forecastle Rd', []), p).mention);
 });
+
+test('a full stop after a street or a municipality separates entries', () => {
+  const munis = ['Prince Rupert', 'Bowen Island', 'North Vancouver', 'Duncan', 'North Cowichan'];
+  const seg = (area) => P.parseArea(area, munis).segments.map((s) => [s.label, s.locality]);
+  assert.deepEqual(seg('115-200 Metlakatla Rd. Prince Rupert.'), [['115-200 Metlakatla Rd', 'Prince Rupert']]);
+  assert.deepEqual(seg('966 Huckleberry Ln. Bowen Island.  1712 Woods Rd. North Vancouver'), [['966 Huckleberry Ln', 'Bowen Island'], ['1712 Woods Rd', 'North Vancouver']]);
+  assert.deepEqual(seg('5105-5397 Indian Rd. Duncan. 5210-5359 Indian Rd. North Cowichan'), [['5105-5397 Indian Rd', 'Duncan'], ['5210-5359 Indian Rd', 'North Cowichan']]);
+  // The dash only joined two lists; the number belongs to the next street.
+  assert.deepEqual(seg('4013, 4029 Mcgill St. - 3976, 3986 Trinity St').map((x) => x[0]), ['4013, 4029 Mcgill St', '3976, 3986 Trinity St']);
+  // "St." straight after a house number is Saint, not the end of an entry.
+  assert.deepEqual(P.parseArea('3103 - 3158 St. George St', munis).segments.map((s) => s.key), ['st george st']);
+  // Matching: 150 Metlakatla Rd is in the listing.
+  const m = P.matchOutage(P.parseQuery('150 Metlakatla Rd', munis), P.parseArea('115-200 Metlakatla Rd. Prince Rupert.', munis));
+  assert.ok(m && m.numberListed === true);
+});
