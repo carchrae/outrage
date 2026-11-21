@@ -142,6 +142,8 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 
 .site-footer p { margin: 0; }
 .tz-warning { position: relative; margin: 8px 12px; padding: 8px 36px 8px 10px; border-left: 4px solid var(--warn); background: var(--warn-bg); border-radius: 6px; font-size: 0.9rem; }
 .tz-warning .tz-times { display: block; margin-top: 2px; }
+.freshness { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 8px 0; padding: 8px 10px; background: var(--soft); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.9rem; }
+.freshness .btn { margin-left: auto; }
 .tz-dismiss { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 1.2rem; line-height: 1; cursor: pointer; }
 .tz-dismiss:hover { background: rgba(0, 0, 0, 0.06); color: var(--text); }
 .site-footer p.report { margin-bottom: 6px; color: var(--text); }

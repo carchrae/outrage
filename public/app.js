@@ -11,7 +11,7 @@
   const $ = (sel) => document.querySelector(sel);
   const els = {
     header: $('.site-header'), form: $('#search-form'), q: $('#street-address'), muni: $('#city'), muniList: $('#muni-list'), past: $('#past'), clear: $('#clear'),
-    status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), sheet: $('#outage-dialog'), locate: $('#locate'),
+    freshness: $('#freshness'), status: $('#status'), results: $('#results'), updated: $('#updated'), home: $('#home'), install: $('#install'), dialog: $('#dialog'), sheet: $('#outage-dialog'), locate: $('#locate'),
   };
 
   const HOME_KEY = 'outage-finder.home';
@@ -51,7 +51,16 @@
 
   // ------------------------------------------------------------ data
 
-  async function load() {
+  // Feeds older than this are fetched again when the page comes back into view (the /api proxy caches for 2 minutes).
+  const STALE_MS = 2 * 60e3;
+  let loadedAt = 0;
+  let loading = null;
+
+  function load() {
+    if (!loading) loading = loadFeeds().finally(() => { loading = null; });
+    return loading;
+  }
+  async function loadFeeds() {
     state.loading = true; state.error = '';
     renderStatus();
     try {
@@ -59,6 +68,7 @@
       if (planned.status !== 'fulfilled') throw planned.reason;
       state.currentError = current.status === 'fulfilled' ? '' : String(current.reason && current.reason.message || current.reason);
       ingest(planned.value, current.status === 'fulfilled' ? current.value : null);
+      loadedAt = Date.now();
     } catch (err) {
       state.error = 'Could not load the outage feed (' + (err.message || err) + '). Try again in a minute.';
     } finally {
@@ -72,6 +82,72 @@
       }
     }
   }
+
+  /*
+   * Fetch the feeds again without blanking the page: the old results stay on screen until the new ones arrive,
+   * and a failed refresh keeps them (they are still the latest known) rather than replacing them with an error.
+   */
+  function refresh() {
+    if (loading) return loading;
+    loading = (async () => {
+      try {
+        const [planned, current] = await Promise.allSettled([fetchJSON(API), fetchJSON(API_CURRENT)]);
+        if (planned.status !== 'fulfilled') return;
+        state.currentError = current.status === 'fulfilled' ? '' : String(current.reason && current.reason.message || current.reason);
+        ingest(planned.value, current.status === 'fulfilled' ? current.value : null);
+        loadedAt = Date.now(); state.error = ''; checkFailed = false;
+      } catch (e) { /* keep what is shown */ } finally { render(); }
+    })().finally(() => { loading = null; });
+    return loading;
+  }
+
+  /*
+   * While the page is in view it refetches every STALE_MS for AUTO_MS after it was opened or came back into view
+   * (a phone unlocked, the tab or app reopened). After that it stops, and a bar at the top says when the data is
+   * from, with a button to check again, so a page left open does not poll forever.
+   */
+  const AUTO_MS = 10 * 60e3;
+  let autoUntil = Date.now() + AUTO_MS;
+  function onReturn() {
+    if (document.visibilityState !== 'visible') return;
+    autoUntil = Date.now() + AUTO_MS;
+    if (!loadedAt) { if (state.error && !loading) load(); return; } // the first load is still running, or failed
+    if (Date.now() - loadedAt > STALE_MS) refresh(); else render();
+  }
+  // Switching tabs, minimising, locking a phone: visibilitychange. Switching apps while the window stays on screen
+  // only moves focus, so that counts too. Both can fire together; a refresh already running is reused.
+  document.addEventListener('visibilitychange', onReturn);
+  window.addEventListener('focus', onReturn);
+  window.addEventListener('pageshow', (e) => { if (e.persisted) onReturn(); }); // restored from the back/forward cache
+  window.addEventListener('online', onReturn);
+  setInterval(() => {
+    if (document.visibilityState !== 'visible') return;
+    if (loadedAt && Date.now() < autoUntil && Date.now() - loadedAt > STALE_MS) refresh();
+    else renderFreshness();
+  }, 30e3);
+
+  /** The "data from" bar: hidden while refreshing automatically, shown once that stops or keeps failing. */
+  let checkFailed = false;
+  function renderFreshness() {
+    const show = !!loadedAt && (Date.now() >= autoUntil || Date.now() - loadedAt > 5 * 60e3);
+    if (els.freshness.hidden !== !show) els.freshness.hidden = !show;
+    if (!show) return;
+    const at = `${fmtDateTime(loadedAt)} (${fmtAgo(Date.now() - loadedAt)})`;
+    setHTML(els.freshness, loading
+      ? `<span>Checking for updates…</span>`
+      : `<span>${checkFailed ? 'Could not check for updates. ' : ''}Showing outage data from <b>${esc(at)}</b></span><button type="button" class="btn small primary" id="check-updates">Check for updates</button>`);
+  }
+  els.freshness.addEventListener('click', (e) => {
+    if (!e.target.closest('#check-updates')) return;
+    const before = loadedAt;
+    const p = refresh();
+    renderFreshness();
+    p.then(() => {
+      checkFailed = loadedAt === before;
+      if (!checkFailed) autoUntil = Date.now() + AUTO_MS; // fresh data: back to refreshing on its own for a while
+      renderFreshness();
+    });
+  });
 
   async function fetchJSON(url) {
     const res = await fetch(url, { cache: 'no-cache' });
@@ -543,6 +619,15 @@
         const bar = idx >= 0 ? `<span class="crew-bar" title="${esc(o.crewStatusDescr || '')}">${CREW_STEPS.map((s, i) => `<span class="${i <= idx ? 'done' : ''}"></span>`).join('')}</span>` : '';
         rows.push(['Crew', `<b>${esc(o.crewStatusDescr || 'No crew information')}</b>${bar}`]);
       }
+      // A planned listing is only BC Hydro's schedule: say when the work is expected to start and end, not that power
+      // went off then. The unplanned-feed copy of the same work (kind 'current') reports what actually happened.
+      if (o.kind === 'planned') {
+        rows.push(['Expected start', scheduledTime(o.dateOff, now, 'start')]);
+        rows.push(['Expected end', o.dateOn ? scheduledTime(o.dateOn, now, 'end') : '<b>Not given</b>']);
+        if (o.cause) rows.push(['Cause', esc(o.cause)]);
+        rows.push(['Listed', `${o.numCustomersOut != null ? esc(fmtNum(o.numCustomersOut)) + ' customers · ' : ''}${esc(match.segment.label)}`]);
+        return `<div class="live planned"><div class="live-top"><div class="live-head">Planned outage scheduled now on your street</div>${detailsBtn(o.id)}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
+      }
       let back;
       if (o.dateOn) back = backEstimate(o.dateOn, now);
       else back = `<b>No estimate yet</b>${o.crewEta && o.showEta !== false && o.kind === 'current' ? ` <span class="muted">· crew expected ${esc(fmtDateTime(o.crewEta))} (${esc(fmtRelative(o.crewEta - now))})</span>` : ''}`;
@@ -551,7 +636,7 @@
       if (o.cause) rows.push(['Cause', esc(o.cause)]);
       rows.push(['Affected', `${o.numCustomersOut != null ? esc(fmtNum(o.numCustomersOut)) + ' customers · ' : ''}${esc(match.segment.label)}`]);
       if (o.crewStatusNote) rows.push(['Note', esc(o.crewStatusNote)]);
-      const head = planned ? 'Planned outage in progress on your street' : 'Power is out on your street';
+      const head = planned ? 'Planned work in progress on your street' : 'Power is out on your street';
       return `<div class="live${planned ? ' planned' : ''}"><div class="live-top"><div class="live-head">${head}</div>${detailsBtn(o.id)}</div><dl class="live-rows">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl></div>`;
     }).join('');
   }
@@ -564,6 +649,11 @@
     return on > now
       ? `<b>${esc(fmtDateTime(on))}</b> <span class="muted">(${esc(fmtRelative(on - now))}, BC Hydro's estimate)</span>`
       : `<b>${esc(fmtDateTime(on))}</b> <span class="muted">(estimate passed, not yet updated by BC Hydro)</span>`;
+  }
+  /** A planned outage's scheduled start or end: "Sat, Nov 21 9:30am (scheduled, 3 min ago)". */
+  function scheduledTime(ms, now, which) {
+    const rel = ms > now ? fmtRelative(ms - now) : fmtAgo(now - ms);
+    return `<b>${esc(fmtDateTime(ms))}</b> <span class="muted">(scheduled ${which}, ${esc(rel)})</span>`;
   }
   function backEstimateText(on, now) {
     return on > now ? `expected back ${fmtDateTime(on)}` : `expected back ${fmtDateTime(on)}, estimate passed, not yet updated`;
@@ -670,7 +760,7 @@ ${homeOthers(now)}`);
     const strong = matches.strong;
     if (strong.some((i) => i.o.kind === 'current' && !i.o.plannedWork)) return { text: 'Power out', cls: 'is-out' };
     if (strong.some((i) => i.o.plannedWork)) return { text: 'Planned outage now', cls: 'is-planned' };
-    if (strong.some((i) => statusOf(i.o, now) === 'in progress')) return { text: 'Planned outage now', cls: 'is-planned' };
+    if (strong.some((i) => statusOf(i.o, now) === 'in progress')) return { text: 'Planned outage scheduled now', cls: 'is-planned' };
     if (strong.some((i) => statusOf(i.o, now) === 'upcoming')) return { text: 'Planned outage', cls: 'is-planned' };
     return { text: 'No outage', cls: 'is-clear' };
   }
@@ -695,6 +785,7 @@ ${homeOthers(now)}`);
   // ------------------------------------------------------------ render
 
   function render() {
+    renderFreshness();
     const hideForm = !!state.home && !state.showSearch;
     if (els.form.hidden !== hideForm) els.form.hidden = hideForm;
     if (els.header.hidden !== hideForm) els.header.hidden = hideForm;
@@ -1173,7 +1264,7 @@ ${row('muni', muni ? 'All of ' + esc(muni) : 'Your municipality', muni ? 'every 
 
   function statusBadge(o, st, now) {
     if (st === 'cancelled') return '<span class="badge danger">Cancelled</span>';
-    if (st === 'in progress') return '<span class="badge danger">In progress now</span>';
+    if (st === 'in progress') return '<span class="badge danger" title="BC Hydro\'s schedule puts this outage now; the work may start late or not at all">Scheduled now</span>';
     if (st === 'finished' && M.endedToday(o, now)) return `<span class="badge hit" title="Its scheduled end has passed; it stays listed until the end of the day">Ended ${fmtAgo(now - o.dateOn)}</span>`;
     if (st === 'finished') return '<span class="badge muted">Finished</span>';
     return `<span class="badge">Starts ${fmtRelative(o.dateOff - now)}</span>`;
